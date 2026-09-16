@@ -42,6 +42,27 @@ def wait_for_status(
     raise AssertionError(f"attribution did not reach {expected_status!r}")
 
 
+def test_completed_attribution_and_idle_scan_logging(client):
+    log_directory = client.app.state.log_directory
+
+    # 空库手动扫描：processed=0 属于常态空轮，不应在 server.log 留 INFO 噪音
+    response = client.post("/api/v1/admin/attribution/scan")
+    assert response.status_code == 200
+    assert response.json()["processed"] == 0
+    rendered = (log_directory / "server.log").read_text(encoding="utf-8")
+    assert "event=admin.attribution_scan" not in rendered
+
+    # 归因完成（终态写回）必须留痕
+    payload = message()
+    assert sync(client, payload).status_code == 200
+    assert put_diff(client, payload).status_code == 200
+    wait_for_status(client, "finalized_match")
+
+    rendered = (log_directory / "server.log").read_text(encoding="utf-8")
+    assert "event=attribution.completed" in rendered
+    assert "归因完成：已匹配 MR" in rendered
+
+
 def test_diff_upload_does_not_wait_for_attribution(client, monkeypatch):
     payload = message()
     assert sync(client, payload).status_code == 200

@@ -51,7 +51,7 @@
         radial-gradient(700px 620px at 60% 112%, rgba(255, 122, 26, .07), transparent 60%),
         var(--paper);
     }
-    body > *:not(.wash) { position: relative; z-index: 1; }
+    body > *:not(.wash):not(.modal-mask):not(.toast) { position: relative; z-index: 1; }
 
     /* ── Bar ── */
     .bar {
@@ -129,6 +129,9 @@
     .stone--magenta    { --halo: radial-gradient(circle, rgba(255,61,139,.16), transparent 70%); }
     .stone--grass      { --halo: radial-gradient(circle, rgba(18,196,107,.16), transparent 70%); }
     .stone--sky        { --halo: radial-gradient(circle, rgba(43,179,255,.16), transparent 70%); }
+    .stone--alert      { --halo: radial-gradient(circle, rgba(255,61,139,.22), transparent 70%); border-color: rgba(255,61,139,.45); }
+    .stone[data-jump] { cursor: pointer; }
+    .stone[data-jump]:hover { border-color: var(--iris); }
 
     dl.kv { display: grid; grid-template-columns: max-content 1fr; gap: 7px 18px; margin: 0; font-size: 13.5px; }
     dl.kv dt { color: var(--ink-mute); font-weight: 600; }
@@ -137,9 +140,13 @@
     /* ── Controls ── */
     .toolbar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 14px; }
     .toolbar label { font-size: 12.5px; font-weight: 600; color: var(--ink-soft); display: flex; gap: 6px; align-items: center; }
-    select, input[type="text"], input[type="number"], input:not([type]) {
+    select, input[type="text"], input[type="number"], input[type="datetime-local"], input:not([type]) {
       padding: 7px 10px; border: 1.5px solid var(--edge-2); border-radius: 9px;
       background: var(--paper-2); color: var(--ink); font: 600 12.5px var(--body);
+    }
+    input[type="date"] {
+      padding: 6px 8px; border: 1.5px solid var(--edge-2); border-radius: 9px;
+      background: var(--paper-2); color: var(--ink); font: 600 12px var(--body);
     }
     select:focus, input:focus { outline: 2px solid var(--iris-2); outline-offset: 1px; border-color: var(--iris); }
     .btn {
@@ -150,6 +157,7 @@
     .btn:hover { color: var(--iris); border-color: var(--iris); }
     .btn--primary { color: #fff; background: linear-gradient(135deg, var(--iris), var(--iris-2)); border-color: transparent; }
     .btn--primary:hover { filter: brightness(1.05); color: #fff; }
+    .btn--danger { color: var(--ink-soft); }
     .btn--danger:hover { color: var(--magenta); border-color: var(--magenta); }
     .btn--small { padding: 4px 10px; font-size: 11.5px; border-radius: 8px; }
     .btn:disabled { opacity: .5; cursor: wait; }
@@ -165,10 +173,13 @@
     tbody tr { transition: background .2s ease; }
     tbody tr:hover { background: rgba(75, 63, 228, .035); }
     tr.row-fresh { animation: fresh 3.2s ease-out; }
+    #recBody td { word-break: break-word; }
     @keyframes fresh {
       0% { background: rgba(75, 63, 228, .16); }
       100% { background: transparent; }
     }
+    tr.row-excluded td { opacity: .55; }
+    tr.detail-row > td { background: rgba(75, 63, 228, .03); }
     .mono { font-family: var(--mono); font-size: 12px; }
     .muted { color: var(--ink-mute); }
 
@@ -183,19 +194,55 @@
     .badge--failed             { background: rgba(255,61,139,.13); color: var(--magenta); }
     .badge--finalized_match    { background: rgba(18,196,107,.13); color: #0B8F50; }
     .badge--finalized_no_match { background: rgba(43,179,255,.13); color: #1077C4; }
+    .badge--not_queued         { background: rgba(148,152,163,.18); color: var(--ink-soft); }
+    .badge--excluded           { background: rgba(255,61,139,.16); color: var(--magenta); }
     .chip {
       display: inline-block; padding: 1px 8px; border-radius: 99px; margin: 1px 2px 1px 0;
       font: 700 10px var(--mono); background: rgba(75,63,228,.09); color: var(--iris);
     }
     .chip--warn { background: rgba(255,61,139,.10); color: var(--magenta); }
+    .chip--admin { background: rgba(255,122,26,.14); color: #C75B00; }
+    .fail-groups { display: flex; flex-wrap: wrap; gap: 6px; }
+    .fail-groups .chip { cursor: pointer; padding: 4px 10px; font-size: 11px; }
+    .fail-groups .chip:hover { background: rgba(255,61,139,.12); color: var(--magenta); }
 
-    /* ── Registry ── */
-    .component { border: 1px solid var(--edge); border-radius: var(--radius-sm); background: var(--paper-2); margin-bottom: 16px; overflow: hidden; }
-    .component-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 13px 16px; background: rgba(75, 63, 228, .04); border-bottom: 1px solid var(--edge); flex-wrap: wrap; }
-    .component-head b { font-family: var(--disp); font-size: 14.5px; }
-    .component-head .meta { color: var(--ink-mute); font-size: 12px; }
-    .component-body { padding: 14px 16px; }
+    /* ── Collapsible blocks ── */
+    details.more-filters, details.trend-more { display: block; }
+    details.more-filters { display: inline-block; }
+    details > summary {
+      cursor: pointer; list-style: none; user-select: none;
+      display: inline-flex; align-items: center; gap: 6px;
+      border: 1.5px dashed var(--edge-2); background: var(--paper-2); color: var(--ink-soft);
+      font: 600 12px var(--disp); padding: 6px 12px; border-radius: 9px;
+    }
+    details > summary:hover { color: var(--iris); border-color: var(--iris); }
+    details > summary::before { content: "▸"; font-size: 10px; }
+    details[open] > summary::before { content: "▾"; }
+    details[open] > summary { border-style: solid; color: var(--iris); }
+    .card.flash { animation: cardFlash 1.8s ease; }
+    @keyframes cardFlash {
+      0% { box-shadow: 0 0 0 3px rgba(75, 63, 228, .55), var(--sh-card); }
+      100% { box-shadow: var(--sh-card); }
+    }
+
+    /* ── Registry（主从布局：组件/仓库多时页面不再无限拉长）── */
+    .reg-split { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 12px; align-items: start; }
+    .reg-list, .reg-detail { margin-bottom: 0; }
+    .reg-list { padding: 8px; max-height: calc(100vh - 260px); overflow: auto; }
+    .reg-detail { padding: 16px; max-height: calc(100vh - 260px); overflow: auto; }
+    .reg-item { padding: 9px 11px; border: 1px solid transparent; border-radius: var(--radius-sm); cursor: pointer; }
+    .reg-item:hover { background: rgba(75, 63, 228, .05); }
+    .reg-item.is-active { background: rgba(75, 63, 228, .08); border-color: rgba(75, 63, 228, .35); }
+    .reg-item b { display: block; font-family: var(--disp); font-size: 13px; }
+    .reg-item .mono { font-size: 10.5px; }
+    .reg-item .meta { display: flex; justify-content: space-between; gap: 8px; margin-top: 3px; font-size: 11px; color: var(--ink-mute); }
+    .reg-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+    .reg-repos { max-height: 48vh; overflow: auto; border: 1px solid var(--edge); border-radius: var(--radius-sm); }
+    .reg-repos table { margin: 0; }
+    .reg-repos th { position: sticky; top: 0; background: var(--paper-2); box-shadow: 0 1.5px 0 var(--edge-2); z-index: 1; }
+    @media (max-width: 900px) { .reg-split { grid-template-columns: 1fr; } .reg-list { max-height: 42vh; } }
     form.inline { display: flex; gap: 8px; flex-wrap: wrap; align-items: flex-end; margin-top: 12px; padding-top: 12px; border-top: 1px dashed var(--edge-2); }
+    form.inline[hidden] { display: none; }
     form.inline .field { display: flex; flex-direction: column; gap: 4px; }
     form.inline .field span { font: 700 10px var(--mono); color: var(--ink-mute); text-transform: uppercase; letter-spacing: .06em; }
 
@@ -205,6 +252,12 @@
       color: #D9DCEB; background: #191B26; border-radius: var(--radius-sm);
       font: 12px/1.6 var(--mono); white-space: pre-wrap; word-break: break-word;
     }
+    .log-presets { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+    .log-presets .btn--small { border-style: dashed; }
+    .console .line { display: block; }
+    .console .line--error { color: #FF7A9C; }
+    .console .line--warn  { color: #FFC46B; }
+    .console mark { background: rgba(75, 63, 228, .6); color: #fff; border-radius: 3px; padding: 0 1px; }
 
     .toast {
       position: fixed; right: 18px; bottom: 18px; max-width: 440px; padding: 13px 17px; z-index: 200;
@@ -213,6 +266,20 @@
       font: 600 12.5px var(--body); display: none; word-break: break-all;
     }
     .toast.bad { background: linear-gradient(135deg, #D6266F, var(--magenta)); box-shadow: var(--sh-magenta); }
+
+    /* ── In-page dialog（内嵌内核不支持 window.prompt/confirm，一律用自制弹窗）── */
+    .modal-mask {
+      position: fixed; inset: 0; z-index: 300; display: grid; place-items: center;
+      background: rgba(22, 24, 29, .38); backdrop-filter: blur(2px);
+    }
+    .modal-mask[hidden] { display: none; }
+    .modal {
+      width: min(460px, 92vw); background: var(--paper-2); border: 1px solid var(--edge);
+      border-radius: var(--radius); box-shadow: var(--sh-card); padding: 22px;
+    }
+    .modal h2 { margin: 0 0 6px; font-family: var(--disp); font-size: 15px; }
+    .modal p { margin: 0; font-size: 13px; color: var(--ink-soft); white-space: pre-line; }
+    .modal input { width: 100%; margin-top: 12px; }
     a { color: var(--iris); }
     @media (max-width: 900px) { .grid.halves { grid-template-columns: 1fr; } .bar__sync { width: 100%; justify-content: flex-start; } }
   </style>
@@ -237,6 +304,7 @@
   <nav class="portal-nav" aria-label="管理台导航">
     <button data-tab="overview" class="is-active">总览</button>
     <button data-tab="attribution">归因</button>
+    <button data-tab="versions">版本</button>
     <button data-tab="registry">注册表</button>
     <button data-tab="logs">日志</button>
   </nav>
@@ -256,10 +324,6 @@
       <div class="card">
         <h2>归因调度器</h2>
         <dl class="kv" id="schedulerKv"></dl>
-        <div class="toolbar" style="margin:16px 0 0;">
-          <button class="btn btn--primary" id="btnScan">立即扫描</button>
-          <span class="mono muted" id="scanResult"></span>
-        </div>
       </div>
       <div class="card">
         <h2>注册表 <span class="count">数据库为唯一事实来源</span></h2>
@@ -267,7 +331,7 @@
       </div>
     </div>
     <div class="card">
-      <h2>归因队列分布</h2>
+      <h2>归因队列分布 <span class="count">含未入队（等待补丁）的开发记录</span></h2>
       <div class="stones" id="queueMetrics"></div>
     </div>
     <div class="card">
@@ -279,78 +343,281 @@
     </div>
   </section>
 
-  <!-- ============================== 归因 ============================== -->
+  <!-- ============================== 归因管理面 ============================== -->
   <section class="tab" id="tab-attribution">
+
+    <!-- ① 体检：积压四分类 + 调度器 + 失败分组 + 趋势 -->
     <div class="card">
-      <h2>归因队列 <span class="count" id="queueTotal"></span></h2>
+      <h2>积压体检 <span class="count">非终态记录四分类 · 点击色块可跳转筛选</span></h2>
+      <div class="stones" id="backlogStones"></div>
+      <div class="grid halves" style="margin-top:18px;">
+        <div>
+          <dl class="kv" id="healthSchedulerKv"></dl>
+          <div class="toolbar" style="margin:14px 0 0;">
+            <button class="btn btn--primary" id="btnScanHealth">立即扫描</button>
+            <span class="mono muted" id="scanResultHealth"></span>
+          </div>
+        </div>
+        <div>
+          <h2 style="font-size:13px;">失败原因分组 <span class="count">点击按原因圈定</span></h2>
+          <div class="fail-groups" id="failGroups"><span class="muted">—</span></div>
+        </div>
+      </div>
+      <div class="grid halves" style="margin-top:18px;">
+        <div>
+          <h2 style="font-size:13px;">处理趋势 <span class="count">最近 3 天 · 明细可展开</span></h2>
+          <table>
+            <thead><tr><th>日期</th><th>匹配</th><th>未匹配</th><th>失败</th><th>置信度</th></tr></thead>
+            <tbody id="trendBody"></tbody>
+          </table>
+          <details class="trend-more" style="margin-top:10px;">
+            <summary>展开近 14 天</summary>
+            <table style="margin-top:8px;">
+              <thead><tr><th>日期</th><th>匹配</th><th>未匹配</th><th>失败</th><th>置信度</th></tr></thead>
+              <tbody id="trendBodyFull"></tbody>
+            </table>
+          </details>
+        </div>
+        <div>
+          <h2 style="font-size:13px;">算法版本构成 <span class="count">暴露新旧算法结果并存</span></h2>
+          <table>
+            <thead><tr><th>算法版本</th><th>结果</th><th>数量</th></tr></thead>
+            <tbody id="algoBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ② 定位与处理：组合检索 + 记录列表 + 批量 -->
+    <div class="card" id="cardRecords">
+      <h2>归因记录 <span class="count" id="recTotal"></span></h2>
       <div class="toolbar">
+        <label>仓库 <input id="fRepo" size="14" placeholder="仓库名包含"></label>
+        <label>用户 <input id="fUser" size="12" placeholder="姓名/邮箱"></label>
+        <label>SR <input id="fSr" size="10" placeholder="SR号"></label>
+        <label>AR <input id="fAr" size="10" placeholder="AR号"></label>
+        <label>MR <input id="fMr" size="8" placeholder="MR号"></label>
         <label>状态
-          <select id="queueStatus">
+          <select id="fStatus">
             <option value="">全部</option>
-            <option value="pending">pending</option>
-            <option value="running">running</option>
-            <option value="retry_pending">retry_pending</option>
-            <option value="failed">failed</option>
-            <option value="finalized_match">finalized_match</option>
-            <option value="finalized_no_match">finalized_no_match</option>
+            <option value="pending">待处理</option>
+            <option value="running">执行中</option>
+            <option value="retry_pending">退避重试</option>
+            <option value="failed">失败</option>
+            <option value="finalized_match">已匹配</option>
+            <option value="finalized_no_match">未匹配</option>
+            <option value="not_queued">未入队</option>
           </select>
         </label>
-        <button class="btn" id="btnQueueRefresh">刷新</button>
-        <span style="flex:1"></span>
-        <button class="btn" id="btnQueuePrev">上一页</button>
-        <span class="mono" id="queuePage">1</span>
-        <button class="btn" id="btnQueueNext">下一页</button>
+        <button class="btn btn--primary" id="btnRecRefresh">查询</button>
+        <button class="btn" id="btnRecReset">重置</button>
+        <span id="kindChip" class="chip chip--admin" style="display:none;cursor:pointer;padding:5px 12px;" title="点击清除该筛选">仅看未入队 ✕</span>
+        <details class="more-filters">
+          <summary>更多筛选</summary>
+          <div class="toolbar" style="margin:10px 0 0;">
+            <label>结果
+              <select id="fResult">
+                <option value="">全部</option>
+                <option value="finalized_match">匹配成功</option>
+                <option value="finalized_no_match">未匹配</option>
+              </select>
+            </label>
+            <label>标记 <input id="fFlag" size="12" placeholder="质量标记"></label>
+            <label>算法 <input id="fAlgo" size="10" placeholder="算法版本"></label>
+            <label>通道
+              <select id="fKind">
+                <option value="">全部</option>
+                <option value="aaw">主流程</option>
+                <option value="testing">测试流程</option>
+              </select>
+            </label>
+            <label>入口
+              <select id="fEntry">
+                <option value="">全部</option>
+                <option value="sr">SR</option>
+                <option value="ar">AR</option>
+                <option value="dev">dev</option>
+              </select>
+            </label>
+            <label>无关化
+              <select id="fExcluded">
+                <option value="hidden">隐藏已排除</option>
+                <option value="only">仅看已排除</option>
+                <option value="all">全部</option>
+              </select>
+            </label>
+            <label>自 <input type="date" id="fFrom"></label>
+            <label>至 <input type="date" id="fTo"></label>
+          </div>
+        </details>
       </div>
-      <table>
-        <thead>
-          <tr>
-            <th>状态</th><th>仓库 / SR</th><th>用户</th><th>有效行</th>
-            <th>归因(80%)</th><th>重试</th><th>下次重试</th><th>更新时间</th><th>标记</th><th>操作</th>
-          </tr>
-        </thead>
-        <tbody id="queueBody"></tbody>
-      </table>
+      <div class="toolbar" style="border-top:1px dashed var(--edge-2); padding-top:12px;">
+        <span class="muted" style="font-size:12px;">批量（先预览后执行，单次 ≤ 200 条）：</span>
+        <button class="btn" id="btnBulkRetry">批量重跑</button>
+        <button class="btn" id="btnBulkForce">批量强制重跑</button>
+        <button class="btn btn--danger" id="btnBulkExclude">批量无关化</button>
+        <button class="btn" id="btnBulkRestore">批量恢复</button>
+        <span style="flex:1"></span>
+        <button class="btn" id="btnRecPrev">上一页</button>
+        <span class="mono" id="recPage">1</span>
+        <button class="btn" id="btnRecNext">下一页</button>
+      </div>
+      <div class="table-wrap" style="overflow-x:auto;">
+        <table>
+          <thead>
+            <tr>
+              <th>状态</th><th>仓库 / 需求</th><th>用户</th><th>生成 → 归因(80%)</th>
+              <th>调度</th><th>更新时间</th><th>标记</th><th>操作</th>
+            </tr>
+          </thead>
+          <tbody id="recBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================== 版本运营 ============================== -->
+  <section class="tab" id="tab-versions">
+    <div class="card">
+      <h2>版本运营 <span class="count">谁还在旧版本 · 以每人最近一次上报的版本为准</span></h2>
+      <div class="toolbar">
+        <label>窗口
+          <select id="verWindow">
+            <option value="7">近 7 天</option>
+            <option value="30" selected>近 30 天</option>
+            <option value="90">近 90 天</option>
+          </select>
+        </label>
+        <button class="btn btn--primary" id="btnVerRefresh">刷新</button>
+        <span class="mono muted" id="verBaseline"></span>
+      </div>
+      <div class="stones" id="verStones"></div>
+      <div class="table-wrap" style="margin-top:18px;">
+        <table>
+          <thead>
+            <tr>
+              <th>用户</th><th>当前版本</th><th>落后</th><th>最近上报</th><th>升级轨迹</th>
+            </tr>
+          </thead>
+          <tbody id="verBody"></tbody>
+        </table>
+      </div>
+      <details class="trend-more" style="margin-top:16px;">
+        <summary>非发布版本账号 <span class="count" id="verNonReleaseCount"></span></summary>
+        <table style="margin-top:8px;">
+          <thead><tr><th>用户</th><th>邮箱</th><th>上报版本</th><th>最近上报</th></tr></thead>
+          <tbody id="verNonRelease"></tbody>
+        </table>
+      </details>
+      <details class="trend-more" style="margin-top:8px;">
+        <summary>版本分布 <span class="count">窗口内上报的版本构成</span></summary>
+        <div class="stones" id="verDistStones" style="margin-top:10px;"></div>
+      </details>
     </div>
   </section>
 
   <!-- ============================== 注册表 ============================== -->
   <section class="tab" id="tab-registry">
-    <div class="card">
-      <h2>新增组件</h2>
-      <form class="inline" id="formComponent" style="border:none; padding:0; margin:0;">
-        <div class="field"><span>ID (slug)</span><input name="component_id" required maxlength="128" placeholder="my-service"></div>
-        <div class="field"><span>名称</span><input name="name" required maxlength="128" placeholder="我的服务"></div>
-        <div class="field"><span>SE</span><input name="se" maxlength="64" placeholder="张三"></div>
-        <button type="submit" class="btn btn--primary">创建组件</button>
-      </form>
+    <div class="card" style="padding:12px 16px; margin-bottom:12px;">
+      <div class="toolbar" style="margin-bottom:0;">
+        <input id="regSearch" style="width:280px" placeholder="搜索组件名 / ID / SE / 仓库…" autocomplete="off">
+        <span class="mono muted" id="regStats"></span>
+        <button class="btn" id="btnRegRefresh">刷新</button>
+        <details id="regAddBox" style="margin-left:auto;">
+          <summary>新增组件</summary>
+          <form class="inline" id="formComponent" style="border:none; padding-top:0;">
+            <div class="field"><span>ID (slug)</span><input name="component_id" required maxlength="128" placeholder="my-service"></div>
+            <div class="field"><span>名称</span><input name="name" required maxlength="128" placeholder="我的服务"></div>
+            <div class="field"><span>SE</span><input name="se" maxlength="64" placeholder="张三"></div>
+            <button type="submit" class="btn btn--primary">创建组件</button>
+          </form>
+        </details>
+      </div>
     </div>
-    <div id="registryComponents"></div>
+    <div class="reg-split">
+      <div class="card reg-list" id="regList"></div>
+      <div class="card reg-detail" id="regDetail"></div>
+    </div>
   </section>
 
   <!-- ============================== 日志 ============================== -->
   <section class="tab" id="tab-logs">
     <div class="card">
-      <h2>日志尾部</h2>
+      <h2>日志 <span class="count">只读文件末尾 2MB（时间窗在此范围内生效）· 筛选为「包含匹配」· 切条件即时生效</span></h2>
       <div class="toolbar">
         <label>文件
           <select id="logFile">
-            <option value="error.log">error.log</option>
-            <option value="server.log">server.log</option>
-            <option value="access.log">access.log</option>
+            <option value="server.log">server.log · 业务日志</option>
+            <option value="error.log">error.log · 错误输出</option>
+            <option value="access.log">access.log · HTTP 访问</option>
           </select>
         </label>
-        <label>级别 <input id="logLevel" size="8" placeholder="WARNING"></label>
-        <label>事件 <input id="logEvent" size="14" placeholder="attribution"></label>
-        <label>搜索 <input id="logQuery" size="14" placeholder="关键字"></label>
-        <label>行数 <input id="logLines" type="number" value="200" min="1" max="500" style="width:64px"></label>
-        <button class="btn btn--primary" id="btnLogRefresh">查看</button>
-        <label><input type="checkbox" id="logAuto"> 自动刷新(5s)</label>
-        <span class="mono muted" id="logMeta" style="margin-left:auto;"></span>
+        <label>级别
+          <select id="logLevel">
+            <option value="">全部</option>
+            <option value="DEBUG">DEBUG</option>
+            <option value="INFO">INFO</option>
+            <option value="WARNING">WARNING</option>
+            <option value="ERROR">ERROR</option>
+            <option value="CRITICAL">CRITICAL</option>
+          </select>
+        </label>
+        <label>开始 <input type="datetime-local" id="logSince" style="width:186px"></label>
+        <label>结束 <input type="datetime-local" id="logUntil" style="width:186px"></label>
+        <label>时间窗
+          <select id="logRange">
+            <option value="">不限</option>
+            <option value="5m">最近 5 分钟</option>
+            <option value="30m">最近 30 分钟</option>
+            <option value="1h">最近 1 小时</option>
+            <option value="24h">最近 24 小时</option>
+            <option value="today">今天</option>
+          </select>
+        </label>
       </div>
-      <pre class="console" id="logOutput">等待查询…</pre>
+      <div class="toolbar" style="margin-bottom:12px;">
+        <label>关键字 <input id="logQuery" size="20" placeholder="如 attribution / 仓库名 / request_id" autocomplete="off"></label>
+        <label>末尾
+          <select id="logLines">
+            <option value="200">200 行</option>
+            <option value="500">500 行</option>
+          </select>
+        </label>
+        <button class="btn btn--primary" id="btnLogRefresh">刷新</button>
+        <label><input type="checkbox" id="logAuto"> 自动刷新(5s)</label>
+      </div>
+      <div class="log-presets">
+        <span class="mono muted">快捷：</span>
+        <button class="btn btn--small" data-log-preset="server">全部业务日志</button>
+        <button class="btn btn--small" data-log-preset="error">只看错误</button>
+        <button class="btn btn--small" data-log-preset="attributionFail">归因·失败与重试</button>
+        <button class="btn btn--small" data-log-preset="attributionDone">归因·完成结果</button>
+        <button class="btn btn--small" data-log-preset="adminOps">归因·管理员操作</button>
+        <button class="btn btn--small" data-log-preset="registry">注册表变更</button>
+        <button class="btn btn--small" data-log-preset="telemetry">遥测上报</button>
+        <button class="btn btn--small" data-log-preset="objects">上传与补丁</button>
+        <button class="btn btn--small" data-log-preset="access">HTTP 访问</button>
+        <button class="btn btn--small" data-log-preset="service">服务启停</button>
+      </div>
+      <pre class="console" id="logOutput">加载中…</pre>
+      <p class="mono muted" id="logMeta" style="margin:8px 2px 0; font-size:11px;"></p>
     </div>
   </section>
 </main>
+
+<!-- 页面内弹窗：确认 / 输入（兼容不支持原生 prompt/confirm 的内嵌内核） -->
+<div class="modal-mask" id="promptMask" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="promptTitle">
+    <h2 id="promptTitle"></h2>
+    <p id="promptMessage"></p>
+    <input id="promptInput" autocomplete="off">
+    <div class="toolbar" style="margin:16px 0 0; justify-content:flex-end;">
+      <button class="btn" id="promptCancel">取消</button>
+      <button class="btn btn--primary" id="promptOk">确定</button>
+    </div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script>
@@ -372,6 +639,29 @@ const fmtTime = (iso) => {
   const date = new Date(iso);
   return Number.isNaN(date.getTime()) ? iso : date.toLocaleTimeString("zh-CN", { hour12: false });
 };
+const fmtDay = (iso) => {
+  if (!iso) return "—";
+  const date = new Date(iso);
+  return Number.isNaN(date.getTime()) ? iso : date.toLocaleDateString("zh-CN", { month: "2-digit", day: "2-digit" });
+};
+const fmtShort = (iso) => {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  const p = (n) => String(n).padStart(2, "0");
+  return `${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+};
+
+const STATUS_LABELS = {
+  pending: "待处理", running: "执行中", retry_pending: "退避重试", failed: "失败",
+  finalized_match: "已匹配", finalized_no_match: "未匹配", not_queued: "未入队",
+};
+const REASON_LABELS = { unknown: "未知/超窗" };
+// Lifecycle bookkeeping flags — folded into a "+n" chip instead of rendering
+// one noisy chip per row; audit-relevant admin_* flags always stay visible.
+const NOISE_FLAGS = new Set([
+  "attribution_pending", "attribution_failed", "external_service", "mock_attribution",
+]);
 
 let toastTimer = null;
 function toast(message, bad = false) {
@@ -398,6 +688,44 @@ async function api(path, options = {}) {
   return body;
 }
 
+/* ------------------------------ 页面内弹窗 ------------------------------
+ * 内嵌内核（及部分 webview）不支持 window.prompt/confirm（调用直接抛异常），
+ * 所有需要确认/输入的操作一律走这套自制弹窗。
+ * askDialog 返回：输入型 → 字符串（取消为 null）；确认型 → true/false。
+ * ---------------------------------------------------------------------- */
+function askDialog({ title, message = "", placeholder = "", initial = "", withInput = true, okText = "确定" }) {
+  return new Promise((resolve) => {
+    const mask = $("#promptMask");
+    $("#promptTitle").textContent = title;
+    $("#promptMessage").textContent = message;
+    $("#promptMessage").style.display = message ? "" : "none";
+    const input = $("#promptInput");
+    input.style.display = withInput ? "" : "none";
+    input.value = initial;
+    input.placeholder = placeholder;
+    $("#promptOk").textContent = okText;
+    const done = (value) => {
+      mask.hidden = true;
+      $("#promptOk").removeEventListener("click", onOk);
+      $("#promptCancel").removeEventListener("click", onCancel);
+      document.removeEventListener("keydown", onKey);
+      resolve(value);
+    };
+    const onOk = () => done(withInput ? input.value.trim() : true);
+    const onCancel = () => done(withInput ? null : false);
+    const onKey = (event) => {
+      if (event.key === "Enter" && withInput) onOk();
+      if (event.key === "Escape") onCancel();
+    };
+    $("#promptOk").addEventListener("click", onOk);
+    $("#promptCancel").addEventListener("click", onCancel);
+    document.addEventListener("keydown", onKey);
+    mask.hidden = false;
+    if (withInput) { input.focus(); input.select(); }
+  });
+}
+const askConfirm = (title, message) => askDialog({ title, message, withInput: false, okText: "确认执行" });
+
 /* ------------------------------ Tab switching ------------------------------ */
 document.querySelector(".portal-nav").addEventListener("click", (event) => {
   const button = event.target.closest("button[data-tab]");
@@ -405,8 +733,10 @@ document.querySelector(".portal-nav").addEventListener("click", (event) => {
   document.querySelectorAll(".portal-nav button").forEach((b) => b.classList.toggle("is-active", b === button));
   document.querySelectorAll("section.tab").forEach((s) => s.classList.toggle("is-active", s.id === `tab-${button.dataset.tab}`));
   if (button.dataset.tab === "overview") loadOverview();
-  if (button.dataset.tab === "attribution") { queuePage = 1; loadQueue(); }
+  if (button.dataset.tab === "attribution") { loadHealth(); recPage = 1; loadRecords(); }
+  if (button.dataset.tab === "versions") loadVersions();
   if (button.dataset.tab === "registry") loadRegistry();
+  if (button.dataset.tab === "logs") loadLogs();
 });
 
 /* -------------------------------- Overview -------------------------------- */
@@ -428,10 +758,11 @@ async function loadOverview() {
     const voices = {
       pending: "stone--warn", running: "stone--tangerine", retry_pending: "stone--tangerine",
       failed: "stone--magenta", finalized_match: "stone--grass", finalized_no_match: "stone--sky",
+      not_queued: "stone--iris",
     };
     $("#queueMetrics").innerHTML = Object.entries(data.attribution.by_status).map(([status, count]) => `
       <div class="stone ${voices[status] ?? "stone--iris"}">
-        <small>${esc(status)}</small><strong>${count}</strong>
+        <small>${esc(STATUS_LABELS[status] ?? status)}</small><strong>${count}</strong>
       </div>`).join("");
     $("#registryMetrics").innerHTML = `
       <div class="stone stone--iris"><small>组件</small><strong>${data.registry.components}</strong></div>
@@ -442,191 +773,701 @@ async function loadOverview() {
   } catch (error) { markSync(false); toast(`总览加载失败：${error.message}`, true); }
 }
 
-$("#btnScan").addEventListener("click", async () => {
-  $("#btnScan").disabled = true;
-  try {
-    const result = await api("/api/v1/admin/attribution/scan", { method: "POST" });
-    $("#scanResult").textContent = result.already_running
-      ? "已有扫描在进行中"
-      : `本轮处理 ${result.processed} 条${result.revived ? "（调度器已从自暂停中恢复）" : ""}`;
-    loadOverview();
-  } catch (error) { toast(`扫描失败：${error.message}`, true); }
-  finally { $("#btnScan").disabled = false; }
-});
-
-/* ------------------------------- Attribution ------------------------------- */
-let queuePage = 1;
-let queueCache = [];
-const freshRows = new Map();  // dev_run_id -> timestamp, for the rerun highlight
-
-async function loadQueue() {
-  try {
-    const status = $("#queueStatus").value;
-    const params = new URLSearchParams({ page: queuePage, page_size: 25 });
-    if (status) params.set("attribution_status", status);
-    const data = await api(`/api/v1/admin/attribution/queue?${params}`);
-    markSync(true);
-    queueCache = data.items;
-    $("#queueTotal").textContent = `共 ${data.total} 条`;
-    $("#queuePage").textContent = queuePage;
-    $("#btnQueuePrev").disabled = queuePage <= 1;
-    $("#btnQueueNext").disabled = queuePage * 25 >= data.total;
-    const now = Date.now();
-    for (const [id, at] of freshRows) { if (now - at > 4000) freshRows.delete(id); }
-    $("#queueBody").innerHTML = data.items.map((item) => {
-      const fresh = freshRows.has(item.dev_run_id) ? " row-fresh" : "";
-      const flags = (item.quality_flags ?? []).map((flag) =>
-        flag === "admin_retry"
-          ? '<span class="chip">admin_retry</span>'
-          : `<span class="chip${flag.startsWith("attribution_failed") || flag.startsWith("remote_") || flag.startsWith("worker_") ? "--warn" : ""}">${esc(flag)}</span>`
-      ).join("");
-      return `
-      <tr data-dev="${esc(item.dev_run_id)}" class="${fresh.trim()}">
-        <td><span class="badge badge--${esc(item.attribution_status)}">${esc(item.attribution_status)}</span>
-          ${item.retry_window_expired ? '<div class="muted" style="font-size:11px;margin-top:3px;">窗口已过</div>' : ""}</td>
-        <td><b>${esc(item.repository)}</b><div class="muted">${esc(item.sr ?? "")} ${esc(item.ar ?? "")}</div></td>
-        <td>${esc(item.user_name)}</td>
-        <td class="mono">${item.dev_effective_lines}</td>
-        <td class="mono">${item.attributed_lines_80}${item.matched_mr_url
-          ? ` <a href="${esc(item.matched_mr_url)}" target="_blank" rel="noopener">MR</a>` : ""}</td>
-        <td class="mono">${item.retry_count}</td>
-        <td class="mono">${esc(item.next_retry_at ? fmtTime(item.next_retry_at) : "—")}</td>
-        <td class="mono">${esc(fmtTime(item.server_updated_at))}</td>
-        <td>${flags}</td>
-        <td><button class="btn btn--small" data-retry="${esc(item.dev_run_id)}">重试</button></td>
-      </tr>`;
-    }).join("") || '<tr><td colspan="10" class="muted">队列为空</td></tr>';
-  } catch (error) { markSync(false); toast(`队列加载失败：${error.message}`, true); }
+async function triggerScan() {
+  const result = await api("/api/v1/admin/attribution/scan", { method: "POST" });
+  const text = result.already_running
+    ? "已有扫描在进行中"
+    : `本轮处理 ${result.processed} 条${result.revived ? "（调度器已从自暂停中恢复）" : ""}`;
+  $("#scanResultHealth").textContent = text;
+  loadHealth();
 }
 
-$("#btnQueueRefresh").addEventListener("click", () => { queuePage = 1; loadQueue(); });
-$("#queueStatus").addEventListener("change", () => { queuePage = 1; loadQueue(); });
-$("#btnQueuePrev").addEventListener("click", () => { if (queuePage > 1) { queuePage -= 1; loadQueue(); } });
-$("#btnQueueNext").addEventListener("click", () => { queuePage += 1; loadQueue(); });
+$("#btnScanHealth").addEventListener("click", async () => {
+  $("#btnScanHealth").disabled = true;
+  try { await triggerScan(); } catch (error) { toast(`扫描失败：${error.message}`, true); }
+  finally { $("#btnScanHealth").disabled = false; }
+});
 
+/* ------------------------- Attribution management ------------------------- */
+let recPage = 1;
+let recCache = [];
+let recRecordKind = "all";   // 积压体检色块的跳转筛选（queued/not_queued/all）
+const freshRows = new Set();
+const openDetails = new Set();
 const RERUN_SETTLED = ["finalized_match", "finalized_no_match", "failed", "retry_pending"];
 
+function recordFilterParams(overrides = {}) {
+  const params = {
+    repository: $("#fRepo").value.trim() || null,
+    user: $("#fUser").value.trim() || null,
+    sr: $("#fSr").value.trim() || null,
+    ar: $("#fAr").value.trim() || null,
+    mr: $("#fMr").value.trim() || null,
+    attribution_status: $("#fStatus").value || null,
+    result_status: $("#fResult").value || null,
+    quality_flag: $("#fFlag").value.trim() || null,
+    algorithm_version: $("#fAlgo").value.trim() || null,
+    workflow_kind: $("#fKind").value || null,
+    entry: $("#fEntry").value || null,
+    excluded: $("#fExcluded").value,
+    record_kind: recRecordKind,
+    ...overrides,
+  };
+  Object.keys(params).forEach((key) => {
+    if (params[key] === null || params[key] === undefined || params[key] === "") delete params[key];
+  });
+  return params;
+}
+
+async function loadHealth() {
+  try {
+    const data = await api("/api/v1/admin/attribution/health");
+    markSync(true);
+    const b = data.backlog;
+    const stones = [
+      { label: "等待补丁", value: b.waiting_patch, cls: "stone--iris", hint: "开发已完成、等待补丁上传确认", jump: { record_kind: "not_queued" } },
+      { label: "等待调度", value: b.waiting_dispatch, cls: "stone--warn", hint: "已入队、等待下一轮扫描", jump: { attribution_status: "pending" } },
+      { label: "退避中", value: b.backing_off, cls: "stone--tangerine", hint: "失败后按退避规则等待重试", jump: { attribution_status: "retry_pending" } },
+      { label: "疑似卡死", value: b.suspected_stuck, cls: b.suspected_stuck ? "stone--alert" : "stone--warn",
+        hint: `执行超时 ${b.stuck_breakdown.stale_running} · 重试逾期 ${b.stuck_breakdown.overdue_retry}，建议人工重跑` },
+      { label: "超窗失败", value: b.window_expired_failed, cls: b.window_expired_failed ? "stone--magenta" : "stone--warn",
+        hint: "已超出重试窗口的失败记录，可用「强制重跑」补救", jump: { attribution_status: "failed" } },
+    ];
+    $("#backlogStones").innerHTML = stones.map((s, index) => `
+      <div class="stone ${s.cls}" ${s.jump ? `data-jump="${index}" title="${esc(s.hint)}"` : `title="${esc(s.hint)}"`}>
+        <small>${esc(s.label)}</small><strong>${s.value}</strong>
+      </div>`).join("");
+    const s = data.scheduler;
+    const pausedOrStopped = s.paused || !s.running;
+    $("#healthSchedulerKv").innerHTML = `
+      <dt>运行状态</dt><dd>${pausedOrStopped
+        ? '<span class="badge badge--failed">' + (s.paused ? "已自暂停" : "未运行") + "</span>"
+        : '<span class="badge badge--finalized_match">运行中</span>'}</dd>
+      <dt>上次扫描</dt><dd>${esc(s.last_scan_at ?? "—")}${s.last_scan_processed !== null ? ` · 处理 ${s.last_scan_processed} 条` : ""}</dd>
+      <dt>连续失败</dt><dd>${s.consecutive_failures}</dd>
+      <dt>扫描间隔</dt><dd>${Math.round(s.scan_interval_seconds / 60)} 分钟 · 重试窗口 ${Math.round(s.retry_window_seconds / 86400)} 天</dd>`;
+    $("#failGroups").innerHTML = (data.failures || []).length
+      ? data.failures.map((g) => `<span class="chip chip--warn" data-failflag="${esc(g.reason)}" title="点击按此原因圈定记录">${esc(REASON_LABELS[g.reason] ?? g.reason)} × ${g.count}</span>`).join("")
+      : '<span class="muted">当前无失败记录</span>';
+    const trendRow = (p) => `
+      <tr><td class="mono">${esc(p.date.slice(5))}</td><td class="mono">${p.matched}</td>
+      <td class="mono">${p.no_match}</td><td class="mono">${p.failed}</td>
+      <td class="mono">${p.avg_confidence === null ? "—" : (p.avg_confidence * 100).toFixed(0) + "%"}</td></tr>`;
+    const trend = data.trend || [];
+    $("#trendBody").innerHTML = trend.slice(-3).map(trendRow).join("") || '<tr><td colspan="5" class="muted">暂无数据</td></tr>';
+    $("#trendBodyFull").innerHTML = trend.map(trendRow).join("");
+    $("#algoBody").innerHTML = data.algorithms.map((a) => `
+      <tr><td class="mono">${esc(a.algorithm_version)}</td>
+      <td><span class="badge badge--${esc(a.result_status)}">${esc(STATUS_LABELS[a.result_status] ?? a.result_status)}</span></td>
+      <td class="mono">${a.count}</td></tr>`).join("") || '<tr><td colspan="3" class="muted">暂无数据</td></tr>';
+  } catch (error) { markSync(false); toast(`体检加载失败：${error.message}`, true); }
+}
+
+$("#backlogStones").addEventListener("click", async (event) => {
+  const stone = event.target.closest("[data-jump]");
+  if (!stone) return;
+  const jump = [
+    { record_kind: "not_queued" }, { attribution_status: "pending" },
+    { attribution_status: "retry_pending" }, null, { attribution_status: "failed" },
+  ][Number(stone.dataset.jump)];
+  if (!jump) return;
+  recRecordKind = jump.record_kind ?? "all";
+  $("#fStatus").value = jump.attribution_status ?? "";
+  recPage = 1;
+  await loadRecords();
+  // Jump to the records card and flash it so the applied filter is visible.
+  const card = $("#cardRecords");
+  card.scrollIntoView({ behavior: "smooth", block: "start" });
+  card.classList.remove("flash");
+  void card.offsetWidth;
+  card.classList.add("flash");
+});
+
+$("#failGroups").addEventListener("click", async (event) => {
+  const chip = event.target.closest("[data-failflag]");
+  if (!chip) return;
+  const reason = chip.dataset.failflag;
+  $("#fStatus").value = "failed";
+  // "unknown" covers window-expired records that carry no engine reason;
+  // filtering by the literal string would match nothing.
+  $("#fFlag").value = reason === "unknown" ? "" : reason;
+  recPage = 1;
+  await loadRecords();
+  const card = $("#cardRecords");
+  card.scrollIntoView({ behavior: "smooth", block: "start" });
+  card.classList.remove("flash");
+  void card.offsetWidth;
+  card.classList.add("flash");
+});
+
+function renderKindChip() {
+  const chip = $("#kindChip");
+  const labels = { not_queued: "仅看未入队", queued: "仅看已入队" };
+  if (recRecordKind === "all") { chip.style.display = "none"; return; }
+  chip.textContent = `${labels[recRecordKind] ?? recRecordKind} ✕`;
+  chip.style.display = "inline-block";
+}
+
+$("#kindChip").addEventListener("click", () => {
+  recRecordKind = "all";
+  renderKindChip();
+  recPage = 1;
+  loadRecords();
+});
+
+async function loadRecords() {
+  renderKindChip();
+  try {
+    const params = new URLSearchParams({ page: recPage, page_size: 25 });
+    for (const [key, value] of Object.entries(recordFilterParams())) {
+      params.set(key, value);
+    }
+    const data = await api(`/api/v1/admin/attribution/records?${params}`);
+    markSync(true);
+    recCache = data.items;
+    $("#recTotal").textContent = `共 ${data.total} 条`;
+    $("#recPage").textContent = recPage;
+    $("#btnRecPrev").disabled = recPage <= 1;
+    $("#btnRecNext").disabled = recPage * 25 >= data.total;
+    for (const [id, at] of [...freshRows]) { if (Date.now() - at > 6000) freshRows.delete(id); }
+    $("#recBody").innerHTML = data.items.map((item) => recordRowHtml(item)).join("")
+      || '<tr><td colspan="8" class="muted">没有符合条件的记录</td></tr>';
+    for (const id of openDetails) {
+      const anchor = document.querySelector(`tr[data-dev="${id}"]`);
+      if (anchor) expandDetail(id, anchor, false);
+    }
+  } catch (error) { markSync(false); toast(`记录加载失败：${error.message}`, true); }
+}
+
+function recordRowHtml(item) {
+  const fresh = freshRows.has(item.dev_run_id) ? " row-fresh" : "";
+  const excluded = item.admin_excluded ? " row-excluded" : "";
+  // Audit-relevant flags stay visible; lifecycle noise folds into "+n".
+  const meaningful = [];
+  const noise = [];
+  for (const flag of item.quality_flags ?? []) {
+    (NOISE_FLAGS.has(flag) ? noise : meaningful).push(flag);
+  }
+  const flags = meaningful.slice(0, 2).map((flag) => {
+    if (flag === "admin_retry") return '<span class="chip chip--admin">人工重跑</span>';
+    if (flag === "admin_retry_expired") return '<span class="chip chip--admin">超窗补跑</span>';
+    const warn = flag.startsWith("remote_") || flag.startsWith("worker_");
+    return `<span class="chip${warn ? "--warn" : ""}" title="${esc(flag)}">${esc(flag.length > 22 ? flag.slice(0, 20) + "…" : flag)}</span>`;
+  }).join("")
+    + (meaningful.length > 2 ? `<span class="chip" title="${esc(meaningful.slice(2).join("、"))}">+${meaningful.length - 2}</span>` : "")
+    + (noise.length ? `<span class="muted mono" style="font-size:10px;" title="${esc(noise.join("、"))}">+${noise.length}</span>` : "");
+  const retries = item.record_status === "not_queued"
+    ? '<span class="muted">—</span>'
+    : `<span class="mono">重试 ${item.retry_count}</span>${item.next_retry_at
+      ? `<div class="muted mono" style="font-size:11px;">下次 ${esc(fmtShort(item.next_retry_at))}</div>` : ""}`;
+  const throughput = item.record_status === "not_queued"
+    ? '<span class="muted">未产生生成</span>'
+    : `<span class="mono">${item.attributed_lines_80 ?? 0}</span><span class="muted"> / ${item.dev_effective_lines} 行</span>${item.matched_mr_url
+      ? ` <a href="${esc(item.matched_mr_url)}" target="_blank" rel="noopener">MR</a>` : ""}`;
+  const retryBtn = item.record_status === "not_queued"
+    ? ""
+    : `<button class="btn btn--small" data-retry="${esc(item.dev_run_id)}">重跑</button>
+       ${item.retry_window_expired ? `<button class="btn btn--small btn--danger" data-force="${esc(item.dev_run_id)}">强制重跑</button>` : ""}`;
+  const excludeBtn = item.admin_excluded
+    ? `<button class="btn btn--small" data-restore="${esc(item.dev_run_id)}">恢复</button>`
+    : (item.record_status === "finalized_match"
+      ? ""
+      : `<button class="btn btn--small btn--danger" data-exclude="${esc(item.dev_run_id)}">无关化</button>`);
+  return `
+  <tr data-dev="${esc(item.dev_run_id)}" class="${(fresh + excluded).trim()}">
+    <td>
+      <span class="badge badge--${esc(item.record_status)}">${esc(STATUS_LABELS[item.record_status] ?? item.record_status)}</span>
+      ${item.admin_excluded ? '<span class="badge badge--excluded">已无关化</span>' : ""}
+      ${item.retry_window_expired && item.record_status === "failed" ? '<div class="muted" style="font-size:11px;margin-top:3px;">窗口已过</div>' : ""}
+      ${item.upload_status && item.record_status === "not_queued" ? `<div class="muted" style="font-size:11px;margin-top:3px;">补丁: ${esc(item.upload_status)}</div>` : ""}
+    </td>
+    <td><b>${esc(item.repository)}</b><div class="muted">${esc(item.sr ?? "")} ${esc(item.ar ?? "")} · ${esc(item.workflow_kind ?? "aaw")}${item.entry ? " / " + esc(item.entry) : ""}</div></td>
+    <td>${esc(item.user_name)}<div class="muted mono" style="font-size:11px;">${esc(item.user_email ?? "")}</div></td>
+    <td>${throughput}</td>
+    <td>${retries}</td>
+    <td class="mono">${esc(fmtShort(item.server_updated_at))}</td>
+    <td>${flags}</td>
+    <td style="white-space:nowrap;">
+      <button class="btn btn--small" data-detail="${esc(item.dev_run_id)}">详情</button>
+      ${retryBtn}
+      ${excludeBtn}
+    </td>
+  </tr>`;
+}
+
+async function expandDetail(devRunId, row, toggle = true) {
+  const existing = document.querySelector(`tr.detail-row[data-detail-for="${devRunId}"]`);
+  if (existing) {
+    if (toggle) { existing.remove(); openDetails.delete(devRunId); }
+    return;
+  }
+  const mount = document.createElement("tr");
+  mount.className = "detail-row";
+  mount.dataset.detailFor = devRunId;
+  mount.innerHTML = '<td colspan="8" class="muted">加载详情…</td>';
+  row.after(mount);
+  openDetails.add(devRunId);
+  try {
+    const item = await api(`/api/v1/admin/attribution/records/${devRunId}/detail`);
+    const a = item.attribution_detail;
+    const g = item.governance;
+    const stats = item.dev_run?.code_statistics || {};
+    mount.innerHTML = `<td colspan="10">
+      <div class="grid halves">
+        <dl class="kv">
+          <dt>归因结果</dt><dd>${a ? `80% ${a.attributed_lines_80} 行 · 90% ${a.attributed_lines_90} 行 · 60% ${a.attributed_lines_60 ?? "—"} 行 · 置信度 ${(a.confidence * 100).toFixed(1)}%` : "无（未入队或尚未产出）"}</dd>
+          <dt>MR 信息</dt><dd>${item.matched_mr_iid
+            ? `${esc(item.matched_mr_iid)} · 合入 ${esc(a?.mr_merged_at ? fmtDay(a.mr_merged_at) : "—")} · <a href="${esc(item.matched_mr_url)}" target="_blank" rel="noopener">链接</a>` : "—"}</dd>
+          <dt>分支</dt><dd class="mono">${esc(item.dev_run?.branch ?? "—")} → 目标 ${esc(a?.target_branch ?? "—")}</dd>
+          <dt>判定口径</dt><dd>算法 ${esc(a?.algorithm_version ?? "—")} · diff 规则 ${esc(a?.diff_rule_version ?? "—")}</dd>
+          <dt>代码构成</dt><dd class="mono">${stats && stats.total_effective_lines !== undefined
+            ? `有效 ${stats.total_effective_lines} 行${stats.production_lines !== undefined ? ` · 生产 ${stats.production_lines}` : ""}${stats.test_lines !== undefined ? ` · 测试 ${stats.test_lines}` : ""}${stats.script_lines !== undefined ? ` · 脚本 ${stats.script_lines}` : ""}${stats.config_lines !== undefined ? ` · 配置 ${stats.config_lines}` : ""}${stats.doc_lines !== undefined ? ` · 文档 ${stats.doc_lines}` : ""}` : "—"}</dd>
+          <dt>补丁上传</dt><dd>${item.upload ? `${esc(item.upload.status)}${item.upload.confirmed_at ? " · 确认于 " + esc(fmtDay(item.upload.confirmed_at)) : ""}` : (item.upload_status ? esc(item.upload_status) : "无上传记录")}</dd>
+        </dl>
+        <dl class="kv">
+          <dt>工作流</dt><dd>${item.workflow ? `${esc(item.workflow.workflow_kind)} / ${esc(item.workflow.entry ?? "—")} · 版本 ${esc(item.workflow.aaw_version ?? "—")} · ${esc(item.workflow.status)}` : "—"}</dd>
+          <dt>开发记录</dt><dd>${esc(item.dev_run?.status ?? "—")} · 开始 ${esc(item.dev_started_at ? fmtDay(item.dev_started_at) : "—")} · 完成 ${esc(item.dev_completed_at ? fmtDay(item.dev_completed_at) : "—")}</dd>
+          <dt>重试</dt><dd>已重试 ${item.retry_count} 次 · 下次 ${esc(item.next_retry_at ?? "—")}</dd>
+          <dt>治理</dt><dd>${g.admin_excluded
+            ? `<span class="badge badge--excluded">已无关化</span> 原因：${esc(g.reason ?? "—")} · 操作人 ${esc(g.by ?? "—")} · ${esc(g.at ? fmtDay(g.at) : "—")}`
+            : '未排除'}</dd>
+          <dt>质量标记</dt><dd>${(item.quality_flags ?? []).map((f) => `<span class="chip">${esc(f)}</span>`).join("") || "无"}</dd>
+          <dt>dev_run_id</dt><dd class="mono" style="font-size:11px;">${esc(devRunId)}</dd>
+        </dl>
+      </div>
+    </td>`;
+  } catch (error) {
+    mount.innerHTML = `<td colspan="8" class="muted">详情加载失败：${esc(error.message)}</td>`;
+  }
+}
+
+$("#recBody").addEventListener("click", async (event) => {
+  const detailBtn = event.target.closest("button[data-detail]");
+  const retryBtn = event.target.closest("button[data-retry]");
+  const forceBtn = event.target.closest("button[data-force]");
+  const excludeBtn = event.target.closest("button[data-exclude]");
+  const restoreBtn = event.target.closest("button[data-restore]");
+  const row = event.target.closest("tr[data-dev]");
+  if (!row) return;
+  const devRunId = row.dataset.dev;
+  if (detailBtn) { await expandDetail(devRunId, row); return; }
+  if (retryBtn) { await runRetry(devRunId, retryBtn, false); return; }
+  if (forceBtn) { await runRetry(devRunId, forceBtn, true); return; }
+  if (excludeBtn) { await runExclude(devRunId, false); return; }
+  if (restoreBtn) { await runRestore(devRunId, false); }
+});
+
 async function watchRerun(devRunId, button) {
-  // The scheduler may re-finalize within milliseconds; poll until the item
-  // settles so the operator sees the outcome instead of a frozen row.
-  const startedAt = Date.now();
+  // Poll until the rerun settles so the operator sees the outcome.
   for (let round = 0; round < 10; round += 1) {
     await new Promise((resolve) => setTimeout(resolve, 600));
-    await loadQueue();
-    const item = queueCache.find((entry) => entry.dev_run_id === devRunId);
-    if (item && RERUN_SETTLED.includes(item.attribution_status)
-        && fmtTime(item.server_updated_at) !== "—") {
-      freshRows.set(devRunId, Date.now());
-      await loadQueue();
-      toast(`重跑完成：${item.attribution_status}（更新时间 ${fmtTime(item.server_updated_at)}，已标记 admin_retry）`,
+    await loadRecords();
+    const item = recCache.find((entry) => entry.dev_run_id === devRunId);
+    if (item && RERUN_SETTLED.includes(item.attribution_status)) {
+      freshRows.add(devRunId);
+      await loadRecords();
+      toast(`重跑完成：${STATUS_LABELS[item.attribution_status] ?? item.attribution_status}`,
             item.attribution_status === "failed" || item.attribution_status === "retry_pending");
       button.disabled = false;
-      button.textContent = "重试";
       return;
     }
   }
   toast("已提交重跑，调度器处理中；稍后刷新查看结果");
   button.disabled = false;
-  button.textContent = "重试";
 }
 
-$("#queueBody").addEventListener("click", async (event) => {
-  const button = event.target.closest("button[data-retry]");
-  if (!button) return;
+async function runRetry(devRunId, button, force) {
+  if (force && !(await askConfirm(
+    "强制重跑",
+    "将绕过 90 天重试窗口重新发起归因，记录上会留下「超窗补跑」标记。确定继续？",
+  ))) return;
   button.disabled = true;
   button.textContent = "重跑中…";
-  const devRunId = button.dataset.retry;
   try {
-    await api(`/api/v1/admin/attribution/${devRunId}/retry`, { method: "POST" });
-    freshRows.set(devRunId, Date.now());
-    await loadQueue();
-    toast("已重置为 pending 并唤醒调度器，正在跟踪重跑结果…");
+    await api(`/api/v1/admin/attribution/records/${devRunId}/${force ? "force-retry" : "retry"}`, { method: "POST" });
+    freshRows.add(devRunId);
+    await loadRecords();
+    toast(force ? "已强制重置为 pending 并唤醒调度器（留痕：超窗补跑）" : "已重置为 pending 并唤醒调度器");
     await watchRerun(devRunId, button);
   } catch (error) {
-    toast(`重试失败：${error.message}`, true);
+    toast(`${force ? "强制重跑" : "重跑"}失败：${error.message}`, true);
     button.disabled = false;
-    button.textContent = "重试";
+    button.textContent = force ? "强制重跑" : "重跑";
+  }
+}
+
+async function runExclude(devRunId) {
+  const reason = await askDialog({
+    title: "无关化",
+    message: "该记录将退出采纳统计（合入意图口径分母随之变化），可随时恢复。",
+    placeholder: "原因（必填，将留痕）",
+    initial: "非合入目的的实验性生成",
+  });
+  if (reason === null) return;
+  if (!reason) { toast("必须填写原因", true); return; }
+  const operator = await askDialog({
+    title: "操作人（选填）",
+    placeholder: "姓名",
+    initial: "",
+  });
+  if (operator === null) return;
+  try {
+    await api(`/api/v1/admin/attribution/records/${devRunId}/exclude`, {
+      method: "POST",
+      body: JSON.stringify({ reason: reason.trim(), operator }),
+    });
+    toast("已无关化：该记录已退出采纳统计，可随时恢复");
+    loadRecords();
+    loadHealth();
+  } catch (error) { toast(`无关化失败：${error.message}`, true); }
+}
+
+async function runRestore(devRunId) {
+  if (!(await askConfirm("恢复确认", "恢复后该记录重新计入采纳统计口径。确定恢复？"))) return;
+  try {
+    await api(`/api/v1/admin/attribution/records/${devRunId}/restore`, {
+      method: "POST",
+      body: JSON.stringify({}),
+    });
+    toast("已恢复");
+    loadRecords();
+    loadHealth();
+  } catch (error) { toast(`恢复失败：${error.message}`, true); }
+}
+
+async function runBulk(action) {
+  const filters = recordFilterParams(
+    action === "force_retry" ? { attribution_status: $("#fStatus").value || "failed" } : {}
+  );
+  if (action === "exclude" && filters.excluded !== "hidden") {
+    toast("批量无关化请在「隐藏已排除」模式下圈定记录", true);
+    return;
+  }
+  let preview;
+  try {
+    preview = await api("/api/v1/admin/attribution/bulk", {
+      method: "POST",
+      body: JSON.stringify({ action, dry_run: true, ...filters }),
+    });
+  } catch (error) { toast(`预览失败：${error.message}`, true); return; }
+  const names = { retry: "批量重跑", force_retry: "批量强制重跑", exclude: "批量无关化", restore: "批量恢复" };
+  const lines = [
+    `命中 ${preview.matched} 条，其中可执行 ${preview.applicable} 条`,
+    preview.skipped_running ? `执行中跳过 ${preview.skipped_running} 条` : "",
+    preview.skipped_state ? `状态不允许跳过 ${preview.skipped_state} 条` : "",
+  ].filter(Boolean).join("；");
+  if (!preview.applicable) { toast(`${names[action]}：没有可执行的记录（${lines}）`, true); return; }
+  let reason = null;
+  let operator = null;
+  if (action === "exclude") {
+    reason = await askDialog({
+      title: "批量无关化",
+      message: "将圈定当前筛选命中的记录标记为无关。",
+      placeholder: "原因（必填，将留痕）",
+      initial: "非合入目的的实验性生成",
+    });
+    if (reason === null || !reason) return;
+    operator = await askDialog({ title: "操作人（选填）", placeholder: "姓名", initial: "" });
+    if (operator === null) return;
+  }
+  if (!(await askConfirm(`${names[action]}预览`, `${lines}。确定执行？`))) return;
+  try {
+    const result = await api("/api/v1/admin/attribution/bulk", {
+      method: "POST",
+      body: JSON.stringify({ action, dry_run: false, reason, operator, ...filters }),
+    });
+    toast(`已执行：成功 ${result.processed} 条${result.failed ? `，失败 ${result.failed} 条` : ""}${result.skipped_running ? `，执行中跳过 ${result.skipped_running} 条` : ""}`,
+          result.failed > 0);
+    loadRecords();
+    loadHealth();
+  } catch (error) { toast(`批量执行失败：${error.message}`, true); }
+}
+
+$("#btnBulkRetry").addEventListener("click", () => runBulk("retry"));
+$("#btnBulkForce").addEventListener("click", () => runBulk("force_retry"));
+$("#btnBulkExclude").addEventListener("click", () => runBulk("exclude"));
+$("#btnBulkRestore").addEventListener("click", () => runBulk("restore"));
+
+$("#btnRecRefresh").addEventListener("click", () => { recPage = 1; loadRecords(); });
+$("#btnRecReset").addEventListener("click", () => {
+  ["#fRepo", "#fUser", "#fSr", "#fAr", "#fMr", "#fFlag", "#fAlgo"].forEach((id) => { $(id).value = ""; });
+  ["#fStatus", "#fResult", "#fKind", "#fEntry"].forEach((id) => { $(id).value = ""; });
+  $("#fExcluded").value = "hidden";
+  $("#fFrom").value = "";
+  $("#fTo").value = "";
+  recRecordKind = "all";
+  recPage = 1;
+  loadRecords();
+});
+$("#btnRecPrev").addEventListener("click", () => { if (recPage > 1) { recPage -= 1; loadRecords(); } });
+$("#btnRecNext").addEventListener("click", () => { recPage += 1; loadRecords(); });
+
+/* ------------------------------ Version ops ------------------------------ */
+async function loadVersions() {
+  const windowDays = $("#verWindow").value;
+  try {
+    const [roster, dist] = await Promise.all([
+      api(`/api/v1/admin/versions/roster?window_days=${windowDays}`),
+      api(`/api/v1/admin/versions/distribution?window_days=${windowDays}`),
+    ]);
+    markSync(true);
+    $("#verBaseline").textContent =
+      `基准 ${roster.latest_version ?? "—"} · ${roster.release_source === "release_dir" ? "发布目录" : "数据推算"}`;
+    $("#verStones").innerHTML = `
+      <div class="stone stone--iris"><small>窗口内活跃人数</small><strong>${roster.active_users}</strong></div>
+      <div class="stone stone--grass"><small>已用最新版</small><strong>${roster.on_latest}</strong></div>
+      <div class="stone stone--tangerine"><small>仍在旧版本</small><strong>${roster.on_old}</strong></div>
+      <div class="stone stone--warn"><small>非发布版本账号</small><strong>${roster.non_release_users}</strong></div>`;
+    $("#verBody").innerHTML = roster.items.map((row) => `
+      <tr data-email="${esc(row.user_email)}">
+        <td><b>${esc(row.user_name)}</b><div class="muted mono" style="font-size:11px;">${esc(row.user_email)}</div></td>
+        <td class="mono">${esc(row.version)}</td>
+        <td><span class="badge badge--retry_pending">落后 ${row.behind} 位</span></td>
+        <td class="mono">${esc(fmtShort(row.last_report_at))}</td>
+        <td><button class="btn btn--small" data-timeline="${esc(row.user_email)}">展开</button></td>
+      </tr>`).join("") || '<tr><td colspan="5" class="muted">窗口内没有停留在旧版本的用户 🎉</td></tr>';
+    $("#verNonReleaseCount").textContent =
+      roster.non_release.length ? `· ${roster.non_release.length} 个（冒烟/联调，不入名单）` : "· 无";
+    $("#verNonRelease").innerHTML = roster.non_release.map((row) => `
+      <tr><td>${esc(row.user_name)}</td><td class="mono">${esc(row.user_email)}</td>
+      <td class="mono">${esc(row.version)}</td><td class="mono">${esc(fmtShort(row.last_report_at))}</td></tr>`).join("")
+      || '<tr><td colspan="4" class="muted">无</td></tr>';
+    $("#verDistStones").innerHTML = dist.items.map((item) => `
+      <div class="stone ${item.is_latest ? "stone--grass" : (item.is_release ? "stone--tangerine" : "stone--warn")}">
+        <small>${esc(item.version)}${item.is_latest ? " · 最新" : ""}${item.is_release ? "" : " · 非发布"}</small>
+        <strong>${item.users}</strong><span class="muted" style="font-size:11px;">人 · ${item.reports} 次上报</span>
+      </div>`).join("");
+  } catch (error) { markSync(false); toast(`版本运营加载失败：${error.message}`, true); }
+}
+
+$("#verBody").addEventListener("click", async (event) => {
+  const button = event.target.closest("button[data-timeline]");
+  if (!button) return;
+  const email = button.dataset.timeline;
+  const row = button.closest("tr[data-email]");
+  // 行内展开，与归因记录的详情交互一致；同时只展开一行
+  const existing = document.querySelector(`tr.ver-detail[data-detail-for="${email}"]`);
+  document.querySelectorAll("tr.ver-detail").forEach((el) => el.remove());
+  document.querySelectorAll("#verBody button[data-timeline]").forEach((b) => {
+    if (b !== button) b.textContent = "展开";
+  });
+  if (existing) { button.textContent = "展开"; return; }
+  const detail = document.createElement("tr");
+  detail.className = "ver-detail detail-row";
+  detail.dataset.detailFor = email;
+  detail.innerHTML = '<td colspan="5" class="muted">加载轨迹…</td>';
+  row.after(detail);
+  button.textContent = "收起";
+  try {
+    const data = await api(`/api/v1/admin/versions/timeline?user_email=${encodeURIComponent(email)}`);
+    detail.innerHTML = `<td colspan="5">
+      <table>
+        <thead><tr><th>版本</th><th>首次上报</th><th>最近上报</th><th>上报次数</th></tr></thead>
+        <tbody>
+          ${data.items.map((span) => `
+            <tr>
+              <td class="mono">${esc(span.version)}${span.version === data.latest_version ? ' <span class="chip">最新</span>' : ""}</td>
+              <td class="mono">${esc(fmtShort(span.first_report_at))}</td>
+              <td class="mono">${esc(fmtShort(span.last_report_at))}</td>
+              <td class="mono">${span.report_count}</td>
+            </tr>`).join("") || '<tr><td colspan="4" class="muted">无上报记录</td></tr>'}
+        </tbody>
+      </table>
+    </td>`;
+  } catch (error) {
+    detail.innerHTML = `<td colspan="5" class="muted">轨迹加载失败：${esc(error.message)}</td>`;
   }
 });
 
+$("#btnVerRefresh").addEventListener("click", loadVersions);
+$("#verWindow").addEventListener("change", loadVersions);
+
 /* -------------------------------- Registry -------------------------------- */
+/* 主从布局：左侧组件列表（搜索过滤），右侧为选中组件的仓库明细；
+   组件几十个、仓库几百个时只渲染当前选中组件，页面不再无限拉长。 */
+let regData = null;
+let regSelected = null;
+
+const COMPONENT_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+const REPO_KEY_RE = /^[A-Za-z0-9][A-Za-z0-9./_-]*$/;
+const CANONICAL_URL_RE = /^(?:(?:https?|ssh|git):\/\/\S+|git@[A-Za-z0-9._-]+[:\/]\S+)$/;
+
+function regHit(component, term) {
+  if (!term) return true;
+  const hay = [
+    component.id, component.name, component.se ?? "", component.ai_master ?? "",
+    ...component.repos.flatMap((repo) => [repo.repo_key, repo.canonical_url]),
+  ].join("\n").toLowerCase();
+  return hay.includes(term);
+}
+
 async function loadRegistry() {
   try {
     const data = await api("/api/v1/admin/registry");
     markSync(true);
-    $("#registryComponents").innerHTML = data.components.map((component) => `
-      <div class="component">
-        <div class="component-head">
-          <div>
-            <b>${esc(component.name)}</b> <span class="mono muted">${esc(component.id)}</span>
-            <div class="meta">SE ${esc(component.se ?? "—")} · AI Master ${esc(component.ai_master ?? "未认领")}</div>
-          </div>
-          <div style="display:flex; gap:6px;">
-            <button class="btn btn--small" data-edit="${esc(component.id)}">改名</button>
-            <button class="btn btn--small btn--danger" data-delete-component="${esc(component.id)}">删除组件</button>
-          </div>
-        </div>
-        <div class="component-body">
-          <table>
-            <thead><tr><th>repo key（须与 CLI 上报的仓库名一致）</th><th>canonical url</th><th>目标分支</th><th>启用</th><th>操作</th></tr></thead>
-            <tbody>
-              ${component.repos.map((repo) => `
-                <tr>
-                  <td class="mono">${esc(repo.repo_key)}</td>
-                  <td class="mono">${esc(repo.canonical_url)}</td>
-                  <td>${esc(repo.target_branch)}</td>
-                  <td>${repo.enabled
-                    ? '<span class="badge badge--finalized_match">启用</span>'
-                    : '<span class="badge badge--failed">停用</span>'}</td>
-                  <td>
-                    <button class="btn btn--small" data-toggle-repo="${esc(component.id)}|${esc(repo.repo_key)}|${repo.enabled ? "false" : "true"}">${repo.enabled ? "停用" : "启用"}</button>
-                    <button class="btn btn--small btn--danger" data-delete-repo="${esc(component.id)}|${esc(repo.repo_key)}">删除</button>
-                  </td>
-                </tr>`).join("") || '<tr><td colspan="5" class="muted">暂无仓库</td></tr>'}
-            </tbody>
-          </table>
-          <form class="inline" data-add-repo="${esc(component.id)}">
-            <div class="field"><span>repo key</span><input name="repo_key" required maxlength="256" placeholder="example-service"></div>
-            <div class="field"><span>canonical url</span><input name="canonical_url" required maxlength="2048" size="34" placeholder="git@git.company.com:team/example-service.git"></div>
-            <div class="field"><span>目标分支</span><input name="target_branch" value="master" maxlength="512"></div>
-            <button type="submit" class="btn btn--small">添加仓库</button>
-          </form>
-        </div>
-      </div>`).join("") || '<div class="card muted">注册表为空，先创建一个组件。</div>';
+    regData = data.components;
+    if (!regData.some((c) => c.id === regSelected)) regSelected = regData[0]?.id ?? null;
+    renderRegistry();
   } catch (error) { markSync(false); toast(`注册表加载失败：${error.message}`, true); }
 }
+
+function renderRegistry() {
+  const term = $("#regSearch").value.trim().toLowerCase();
+  const components = regData ?? [];
+  const visible = components.filter((c) => regHit(c, term));
+  const repoTotal = components.reduce((sum, c) => sum + c.repos.length, 0);
+  $("#regStats").textContent = regData === null
+    ? "加载中…"
+    : `${components.length} 组件 · ${repoTotal} 仓库${term ? ` · 匹配 ${visible.length}` : ""}`;
+  $("#regList").innerHTML = visible.map((component) => `
+    <div class="reg-item${component.id === regSelected ? " is-active" : ""}" data-component="${esc(component.id)}">
+      <b>${esc(component.name)}</b>
+      <span class="mono">${esc(component.id)}</span>
+      <div class="meta"><span>SE ${esc(component.se ?? "—")}</span><span>${component.repos.length} 仓库</span></div>
+    </div>`).join("")
+    || `<div class="muted" style="padding:16px 10px; font-size:12.5px;">${components.length ? "没有匹配的组件。" : "注册表为空，点上方「新增组件」创建。"}</div>`;
+  renderRegistryDetail(term);
+}
+
+function renderRegistryDetail(term = "") {
+  const component = (regData ?? []).find((c) => c.id === regSelected);
+  const mount = $("#regDetail");
+  if (!component) {
+    mount.innerHTML = '<div class="muted" style="padding:40px 10px; text-align:center;">← 从左侧选择一个组件，这里展示它的仓库明细。</div>';
+    return;
+  }
+  const componentHit = [component.id, component.name, component.se ?? ""].join("\n").toLowerCase().includes(term);
+  const repos = componentHit ? component.repos : component.repos.filter((repo) =>
+    [repo.repo_key, repo.canonical_url, repo.target_branch].join("\n").toLowerCase().includes(term));
+  mount.innerHTML = `
+    <div class="reg-head">
+      <div>
+        <h2 style="margin:0;">${esc(component.name)} <span class="count">${esc(component.id)}</span></h2>
+        <div class="muted" style="font-size:12px;">SE ${esc(component.se ?? "—")} · AI Master ${esc(component.ai_master ?? "未认领")} · 共 ${component.repos.length} 个仓库</div>
+      </div>
+      <div style="display:flex; gap:6px;">
+        <button class="btn btn--small" data-edit-component>编辑</button>
+        <button class="btn btn--small btn--danger" data-delete-component="${esc(component.id)}">删除组件</button>
+      </div>
+    </div>
+    <form class="inline" id="regEditForm" hidden style="margin:0 0 14px;">
+      <div class="field"><span>名称</span><input name="name" required maxlength="128" value="${esc(component.name)}"></div>
+      <div class="field"><span>SE（留空保持不变）</span><input name="se" maxlength="64" value="${esc(component.se ?? "")}"></div>
+      <button type="submit" class="btn btn--small btn--primary">保存</button>
+      <button type="button" class="btn btn--small" data-cancel-edit>取消</button>
+    </form>
+    <div class="reg-repos">
+      <table>
+        <thead><tr><th>repo key（须与 CLI 上报一致）</th><th>canonical url</th><th>目标分支</th><th>启用</th><th>操作</th></tr></thead>
+        <tbody>
+          ${repos.map((repo) => `
+            <tr>
+              <td class="mono">${esc(repo.repo_key)}</td>
+              <td class="mono">${esc(repo.canonical_url)}</td>
+              <td>${esc(repo.target_branch)}</td>
+              <td>${repo.enabled
+                ? '<span class="badge badge--finalized_match">启用</span>'
+                : '<span class="badge badge--failed">停用</span>'}</td>
+              <td style="white-space:nowrap;">
+                <button class="btn btn--small" data-toggle-repo="${esc(component.id)}|${esc(repo.repo_key)}|${repo.enabled ? "false" : "true"}">${repo.enabled ? "停用" : "启用"}</button>
+                <button class="btn btn--small btn--danger" data-delete-repo="${esc(component.id)}|${esc(repo.repo_key)}">删除</button>
+              </td>
+            </tr>`).join("")
+            || `<tr><td colspan="5" class="muted">${component.repos.length ? "当前搜索没有匹配的仓库。" : "暂无仓库，可在下方添加。"}</td></tr>`}
+        </tbody>
+      </table>
+    </div>
+    <p class="mono muted" style="font-size:11px; margin:8px 2px 0;">显示 ${repos.length} / ${component.repos.length} 个仓库</p>
+    <details class="trend-more" style="margin-top:8px;">
+      <summary>添加仓库</summary>
+      <form class="inline" data-add-repo="${esc(component.id)}">
+        <div class="field"><span>repo key</span><input name="repo_key" required maxlength="256" placeholder="example-service"></div>
+        <div class="field"><span>canonical url</span><input name="canonical_url" required maxlength="2048" size="34" placeholder="git@git.company.com:team/example-service.git"></div>
+        <div class="field"><span>目标分支</span><input name="target_branch" value="master" maxlength="512"></div>
+        <button type="submit" class="btn btn--small">添加</button>
+      </form>
+    </details>`;
+}
+
+$("#regSearch").addEventListener("input", renderRegistry);
+$("#btnRegRefresh").addEventListener("click", loadRegistry);
+
+$("#regList").addEventListener("click", (event) => {
+  const item = event.target.closest(".reg-item[data-component]");
+  if (!item) return;
+  regSelected = item.dataset.component;
+  renderRegistry();
+});
 
 $("#formComponent").addEventListener("submit", async (event) => {
   event.preventDefault();
   const form = new FormData(event.target);
+  const componentId = String(form.get("component_id") ?? "").trim();
+  if (!COMPONENT_ID_RE.test(componentId)) {
+    toast("组件 ID 只能是字母/数字开头，含字母、数字、点、下划线、中划线", true);
+    return;
+  }
   try {
     const result = await api("/api/v1/admin/registry/components", {
       method: "POST",
       body: JSON.stringify(Object.fromEntries(form)),
     });
     toast(result.message);
+    regSelected = String(form.get("component_id") ?? "");
     event.target.reset();
+    $("#regAddBox").removeAttribute("open");
     loadRegistry();
   } catch (error) { toast(`创建失败：${error.message}`, true); }
 });
 
-$("#registryComponents").addEventListener("submit", async (event) => {
-  const form = event.target.closest("form[data-add-repo]");
-  if (!form) return;
+$("#regDetail").addEventListener("submit", async (event) => {
+  const addForm = event.target.closest("form[data-add-repo]");
+  if (addForm) {
+    event.preventDefault();
+    const componentId = addForm.dataset.addRepo;
+    const data = Object.fromEntries(new FormData(addForm));
+    if (!REPO_KEY_RE.test(String(data.repo_key ?? "").trim())) {
+      toast("repo key 只能是字母/数字开头，含字母、数字、点、下划线、中划线", true);
+      return;
+    }
+    if (!CANONICAL_URL_RE.test(String(data.canonical_url ?? "").trim())) {
+      toast("canonical url 须为 git 地址（https://、ssh://、git:// 或 git@host:path）", true);
+      return;
+    }
+    try {
+      const result = await api(`/api/v1/admin/registry/components/${encodeURIComponent(componentId)}/repos`, {
+        method: "POST",
+        body: JSON.stringify(data),
+      });
+      toast(result.message);
+      loadRegistry();
+    } catch (error) { toast(`添加失败：${error.message}`, true); }
+    return;
+  }
+  if (!event.target.closest("#regEditForm")) return;
   event.preventDefault();
-  const componentId = form.dataset.addRepo;
-  const data = Object.fromEntries(new FormData(form));
+  const data = Object.fromEntries(new FormData(event.target));
   try {
-    const result = await api(`/api/v1/admin/registry/components/${encodeURIComponent(componentId)}/repos`, {
-      method: "POST",
-      body: JSON.stringify(data),
+    const result = await api(`/api/v1/admin/registry/components/${encodeURIComponent(regSelected)}`, {
+      method: "PATCH",
+      body: JSON.stringify({ name: data.name, ...(data.se ? { se: data.se } : {}) }),
     });
-    toast(result.message);
+    toast(result.message ?? "组件已更新");
     loadRegistry();
-  } catch (error) { toast(`添加失败：${error.message}`, true); }
+  } catch (error) { toast(`更新失败：${error.message}`, true); }
 });
 
-$("#registryComponents").addEventListener("click", async (event) => {
+$("#regDetail").addEventListener("click", async (event) => {
+  if (event.target.closest("button[data-cancel-edit]")) {
+    $("#regEditForm").hidden = true;
+    return;
+  }
+  if (event.target.closest("button[data-edit-component]")) {
+    const form = $("#regEditForm");
+    form.hidden = !form.hidden;
+    if (!form.hidden) form.querySelector("input[name=name]").focus();
+    return;
+  }
   const toggle = event.target.closest("button[data-toggle-repo]");
   if (toggle) {
     const [componentId, repoKey, next] = toggle.dataset.toggleRepo.split("|");
@@ -642,7 +1483,7 @@ $("#registryComponents").addEventListener("click", async (event) => {
   const delRepo = event.target.closest("button[data-delete-repo]");
   if (delRepo) {
     const [componentId, repoKey] = delRepo.dataset.deleteRepo.split("|");
-    if (!confirm(`确定删除仓库 ${repoKey}？删除后其统计将不再纳入组件。`)) return;
+    if (!(await askConfirm("删除仓库", `确定删除仓库 ${repoKey}？删除后其统计将不再纳入组件。`))) return;
     try {
       await api(`/api/v1/admin/registry/components/${encodeURIComponent(componentId)}/repos/${encodeURIComponent(repoKey)}`, { method: "DELETE" });
       toast(`仓库 ${repoKey} 已删除`);
@@ -653,33 +1494,41 @@ $("#registryComponents").addEventListener("click", async (event) => {
   const delComponent = event.target.closest("button[data-delete-component]");
   if (delComponent) {
     const componentId = delComponent.dataset.deleteComponent;
-    if (!confirm(`确定删除组件 ${componentId} 及其全部仓库？`)) return;
+    if (!(await askConfirm("删除组件", `确定删除组件 ${componentId} 及其全部仓库？`))) return;
     try {
       await api(`/api/v1/admin/registry/components/${encodeURIComponent(componentId)}`, { method: "DELETE" });
       toast(`组件 ${componentId} 已删除`);
+      if (regSelected === componentId) regSelected = null;
       loadRegistry();
     } catch (error) { toast(`删除失败：${error.message}`, true); }
-    return;
-  }
-  const edit = event.target.closest("button[data-edit]");
-  if (edit) {
-    const componentId = edit.dataset.edit;
-    const card = edit.closest(".component");
-    const name = prompt("新的组件名称：", card.querySelector("b").textContent);
-    if (name === null) return;
-    const se = prompt("新的 SE（留空保持不变）：", "");
-    try {
-      await api(`/api/v1/admin/registry/components/${encodeURIComponent(componentId)}`, {
-        method: "PATCH",
-        body: JSON.stringify({ name, ...(se ? { se } : {}) }),
-      });
-      loadRegistry();
-    } catch (error) { toast(`更新失败：${error.message}`, true); }
   }
 });
 
 /* ---------------------------------- Logs ---------------------------------- */
 let logTimer = null;
+let logQueryTimer = null;
+
+const escapeRegExp = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+function renderLogLines(lines, keyword) {
+  const output = $("#logOutput");
+  if (!lines.length) {
+    output.innerHTML = "（无匹配行）— 试试清空关键字、把级别换回「全部」、放宽时间窗，或换一个文件。";
+    return;
+  }
+  const needle = keyword.trim();
+  output.innerHTML = lines.map((line) => {
+    const cls = /\[(ERROR|CRITICAL)\]/.test(line) ? " line--error"
+      : /\[WARNING\]/.test(line) ? " line--warn" : "";
+    let html = esc(line);
+    if (needle) {
+      // 捕获组保留命中片段（奇数下标），逐段转义后再包 <mark>，避免日志内容注入
+      const parts = line.split(new RegExp(`(${escapeRegExp(needle)})`, "gi"));
+      html = parts.map((part, i) => (i % 2 ? `<mark>${esc(part)}</mark>` : esc(part))).join("");
+    }
+    return `<span class="line${cls}">${html}</span>`;
+  }).join("\n");
+}
 
 async function loadLogs() {
   try {
@@ -687,22 +1536,75 @@ async function loadLogs() {
       file: $("#logFile").value,
       lines: $("#logLines").value || "200",
     });
-    const level = $("#logLevel").value.trim();
-    const event = $("#logEvent").value.trim();
+    const level = $("#logLevel").value;
     const query = $("#logQuery").value.trim();
+    const since = $("#logSince").value;
+    const until = $("#logUntil").value;
     if (level) params.set("level", level);
-    if (event) params.set("event", event);
     if (query) params.set("q", query);
+    if (since) params.set("since", since.replace("T", " "));
+    if (until) params.set("until", until.replace("T", " "));
     const data = await api(`/api/v1/admin/logs?${params}`);
-    $("#logOutput").textContent = data.lines.length
-      ? data.lines.join("\n")
-      : "（无匹配行）";
+    renderLogLines(data.lines, query);
     $("#logMeta").textContent =
-      `${fmtBytes(data.scanned_bytes)} / ${fmtBytes(data.size_bytes)}${data.truncated ? " · 已截断" : ""}`;
+      `显示末尾 ${data.lines.length} 行 · 文件 ${fmtBytes(data.size_bytes)}` +
+      (data.truncated ? " · 文件较大，仅扫描了尾部 2MB" : "");
+    markSync(true);
   } catch (error) { toast(`日志读取失败：${error.message}`, true); }
 }
 
+const LOG_PRESETS = {
+  server: { file: "server.log", level: "", q: "", range: "" },
+  error: { file: "error.log", level: "", q: "", range: "" },
+  attributionFail: { file: "server.log", level: "WARNING", q: "attribution", range: "" },
+  attributionDone: { file: "server.log", level: "", q: "event=attribution.completed", range: "" },
+  adminOps: { file: "server.log", level: "", q: "admin.attribution", range: "" },
+  registry: { file: "server.log", level: "", q: "registry.", range: "" },
+  telemetry: { file: "server.log", level: "", q: "telemetry.", range: "" },
+  objects: { file: "server.log", level: "", q: "objects.", range: "" },
+  access: { file: "access.log", level: "", q: "", range: "" },
+  service: { file: "server.log", level: "", q: "event=service.", range: "" },
+};
+
+const pad2 = (n) => String(n).padStart(2, "0");
+const toLocalInput = (date) =>
+  `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}T${pad2(date.getHours())}:${pad2(date.getMinutes())}`;
+
+function applyLogRange(value) {
+  // 把「最近 N 分钟 / 今天」换算成开始时间；结束留空表示到现在
+  $("#logUntil").value = "";
+  if (!value) { $("#logSince").value = ""; return; }
+  const now = new Date();
+  if (value === "today") {
+    $("#logSince").value = toLocalInput(new Date(now.getFullYear(), now.getMonth(), now.getDate()));
+    return;
+  }
+  const minutes = { "5m": 5, "30m": 30, "1h": 60, "24h": 1440 }[value];
+  $("#logSince").value = toLocalInput(new Date(now.getTime() - minutes * 60000));
+}
+
+document.querySelector(".log-presets").addEventListener("click", (event) => {
+  const button = event.target.closest("button[data-log-preset]");
+  if (!button) return;
+  const preset = LOG_PRESETS[button.dataset.logPreset];
+  $("#logFile").value = preset.file;
+  $("#logLevel").value = preset.level;
+  $("#logQuery").value = preset.q;
+  applyLogRange(preset.range);
+  $("#logRange").value = preset.range;
+  loadLogs();
+});
+
 $("#btnLogRefresh").addEventListener("click", loadLogs);
+["logFile", "logLevel", "logLines", "logSince", "logUntil"].forEach((id) => $("#" + id).addEventListener("change", loadLogs));
+$("#logRange").addEventListener("change", (event) => {
+  applyLogRange(event.target.value);
+  loadLogs();
+});
+$("#logQuery").addEventListener("input", () => {
+  clearTimeout(logQueryTimer);
+  logQueryTimer = setTimeout(loadLogs, 350);
+});
 $("#logAuto").addEventListener("change", (event) => {
   clearInterval(logTimer);
   if (event.target.checked) { logTimer = setInterval(loadLogs, 5000); loadLogs(); }

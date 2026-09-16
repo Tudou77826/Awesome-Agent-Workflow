@@ -46,6 +46,10 @@
       <span class="ctrl__tag">人员</span>
       <div class="multi" id="fPerson" data-placeholder="所有人员"></div>
     </div>
+    <div class="ctrl">
+      <span class="ctrl__tag">版本</span>
+      <div class="multi" id="fVersion" data-placeholder="全部版本"></div>
+    </div>
     <div class="ctrl ctrl--range">
       <span class="ctrl__tag">时间窗</span>
       <div class="segs" id="fRange" role="radiogroup" aria-label="时间范围"></div>
@@ -103,6 +107,14 @@
         <span class="pill__k">合入 · 90%</span>
         <span class="pill__v num" id="factM90">—</span>
       </li>
+      <li class="pill pill--grass" title="合入意图口径：分母剔除已无关化（非合入目的）的生成行数">
+        <span class="pill__k">合入意图采纳率</span>
+        <span class="pill__v num" id="factMI">—</span>
+      </li>
+      <li class="pill pill--tangerine" title="已无关化的生成行数占全部生成行数的比例">
+        <span class="pill__k">实验性占比</span>
+        <span class="pill__v num" id="factExp">—</span>
+      </li>
     </ul>
   </section>
 
@@ -149,6 +161,7 @@
               <th class="th-num" data-sort="mergedLines80">合入·80%</th>
               <th class="th-num" data-sort="mergedLines90">合入·90%</th>
               <th class="th-num" data-sort="adoptionRate80">采纳率·80%</th>
+              <th class="th-num" data-sort="adoptionRate80MergeIntent" title="合入意图口径：分母剔除已无关化的生成行数">合入口径·80%</th>
               <th class="th-num" data-sort="adoptionRate90">采纳率·90%</th>
             </tr>
           </thead>
@@ -206,6 +219,59 @@
         <span class="stone__sub">窗口内全部状态</span>
       </li>
     </ul>
+  </section>
+
+  <!-- ── ①.5 VERSIONS · 版本运营 ─────────────────────── -->
+  <section class="lane" id="laneVersions" data-panel="overview" aria-labelledby="verTitle">
+    <div class="lane__head">
+      <span class="lane__eyebrow">VERSIONS</span>
+      <h2 class="lane__title" id="verTitle">版本 · 谁还在旧版本</h2>
+      <div class="toggle toggle--seg" id="verWindowToggle" role="tablist" aria-label="版本统计窗口"></div>
+      <p class="lane__note" id="verNote">口径：以每人最近一次上报所用版本为准 · 点击行可展开升级轨迹</p>
+    </div>
+    <ul class="stones" id="verOpsStones"></ul>
+    <article class="card" style="--span:12; margin-top:16px;">
+      <header class="card__head">
+        <h2>旧版本使用名单</h2>
+        <span class="hint" id="verOpsHint">落后版本位多者在前 · 最近活跃者优先</span>
+      </header>
+      <div class="table-wrap">
+        <table class="ledger ledger--ver">
+          <thead>
+            <tr>
+              <th class="th-name">用户</th>
+              <th class="th-name">邮箱</th>
+              <th class="th-num">当前版本</th>
+              <th class="th-num">落后版本位</th>
+              <th class="th-name">最近上报</th>
+              <th class="th-num">上报次数</th>
+              <th class="th-num">用过版本数</th>
+            </tr>
+          </thead>
+          <tbody id="verOpsBody"></tbody>
+        </table>
+      </div>
+    </article>
+    <article class="card" id="verTimelineCard" style="--span:12; display:none;">
+      <header class="card__head">
+        <h2 id="verTimelineTitle">升级轨迹</h2>
+        <span class="hint">每个使用过的版本的首末上报时间 ·「一直没升级」的人需要推动</span>
+      </header>
+      <div class="table-wrap">
+        <table class="ledger ledger--ver-tl">
+          <thead>
+            <tr>
+              <th class="th-name">版本</th>
+              <th class="th-name">首次上报</th>
+              <th class="th-name">最近上报</th>
+              <th class="th-num">上报次数</th>
+            </tr>
+          </thead>
+          <tbody id="verTimelineBody"></tbody>
+        </table>
+      </div>
+    </article>
+    <p class="lane__note" id="verNonReleaseNote" style="margin-top:10px;"></p>
   </section>
 
   <!-- ── ② PIPELINE · 步骤效率 ───────────────────────── -->
@@ -417,6 +483,6 @@
 <script src="vendor/echarts.min.js"></script>
 <script src="config.js"></script>
 <script src="mock-data.js?v=20260826-1"></script>
-<script src="bright.js?v=20260826-2"></script>
+<script src="bright.js?v=20260916-1"></script>
 </body>
 </html>

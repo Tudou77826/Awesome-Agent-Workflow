@@ -277,4 +277,9 @@ def create_app(
     return app
 
 
-app = create_app()
+def __getattr__(name: str):
+    # 生产 compose 以 aaw_telemetry.main:app 作为 uvicorn 入口；改为惰性构建，
+    # 其余场景（测试、local_demo 等）import 本模块时不再多建一个默认实例。
+    if name == "app":
+        return create_app()
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

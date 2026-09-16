@@ -54,10 +54,11 @@ class TextFormatter(logging.Formatter):
         if location.startswith("aaw_telemetry."):
             location = location.removeprefix("aaw_telemetry.")
         message = record.getMessage().replace("\r", "\\r").replace("\n", "\\n")
-        fields = []
+        business: list[str] = []
+        request_field: str | None = None
         request_id = request_id_var.get()
         if request_id != "-":
-            fields.append(f"request_id={self._render_value(request_id)}")
+            request_field = f"request_id={self._render_value(request_id)}"
         for key, value in record.__dict__.items():
             if (
                 key not in self._standard
@@ -65,7 +66,12 @@ class TextFormatter(logging.Formatter):
                 and key != "location"
                 and not key.startswith("_")
             ):
-                fields.append(f"{key}={self._render_value(value)}")
+                business.append(f"{key}={self._render_value(value)}")
+        # event 是人工排查时的主检索键，放最前；request_id 最长，垫到行尾
+        fields = [field for field in business if field.startswith("event=")]
+        fields += [field for field in business if not field.startswith("event=")]
+        if request_field is not None:
+            fields.append(request_field)
         rendered = f"{timestamp} [{record.levelname}] [{location}] {message}"
         if fields:
             rendered += " | " + " ".join(fields)

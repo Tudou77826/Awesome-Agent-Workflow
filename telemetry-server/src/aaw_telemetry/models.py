@@ -149,6 +149,7 @@ class DevRun(Base):
         ),
         Index("ix_dev_workflow_started", "workflow_run_id", "started_at"),
         Index("ix_dev_status_completed", "status", "completed_at"),
+        Index("ix_dev_admin_excluded", "admin_excluded"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
@@ -167,6 +168,12 @@ class DevRun(Base):
     window_ends_at: Mapped[datetime | None] = mapped_column(MILLISECOND_DATETIME)
     code_statistics: Mapped[dict | None] = mapped_column(JSON)
     patch_object_key: Mapped[str | None] = mapped_column(String(1024))
+    # Admin governance (无关化): excluded dev runs leave every adoption
+    # denominator but stay listed and reversible. See services/admin.py.
+    admin_excluded: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    admin_excluded_reason: Mapped[str | None] = mapped_column(String(512))
+    admin_excluded_at: Mapped[datetime | None] = mapped_column(MILLISECOND_DATETIME)
+    admin_excluded_by: Mapped[str | None] = mapped_column(String(128))
     client_updated_at: Mapped[datetime] = mapped_column(MILLISECOND_DATETIME, nullable=False)
     client_payload_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     server_updated_at: Mapped[datetime] = mapped_column(MILLISECOND_DATETIME, nullable=False)

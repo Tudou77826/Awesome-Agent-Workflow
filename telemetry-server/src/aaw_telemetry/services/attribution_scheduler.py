@@ -7,7 +7,7 @@ import uuid
 from contextlib import suppress
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import and_, or_, select, update
+from sqlalchemy import String, and_, cast, or_, select, update
 from sqlalchemy.orm import Session, sessionmaker
 
 from ..config import ProjectRegistry, Settings
@@ -30,6 +30,11 @@ INITIAL_RETRY_INTERVAL = timedelta(hours=1)
 MAX_RETRY_INTERVAL = timedelta(hours=32)
 BATCH_SIZE = 50
 MAX_CONSECUTIVE_SCAN_FAILURES = 5
+
+# Records an admin force-ran past the retry window stay eligible for scans;
+# the flag is admin bookkeeping, so match it textually against the JSON list.
+FORCED_FLAG = "admin_retry_expired"
+_forced = cast(CodeAttribution.quality_flags, String).like(f"%{FORCED_FLAG}%")
 
 
 def _utc(value: datetime) -> datetime:
@@ -168,7 +173,8 @@ class AttributionScheduler:
 
     def scan_once(self) -> int:
         """Run one scan pass and record the outcome for status reporting."""
-        started = _millisecond(datetime.now(UTC))
+        started_at = datetime.now(UTC)
+        started = _millisecond(started_at)
         try:
             processed = self.run_once()
         except Exception as exc:
@@ -179,6 +185,18 @@ class AttributionScheduler:
         self._last_scan_at = started
         self._last_scan_processed = processed
         self._last_scan_error = None
+        if processed:
+            # 只有真处理了记录才留痕，空轮是常态不值得刷屏
+            logger.info(
+                f"后台归因扫描完成，本轮处理 {processed} 条",
+                extra={
+                    "event": "attribution.scan_completed",
+                    "processed": processed,
+                    "duration_ms": int(
+                        (datetime.now(UTC) - started_at).total_seconds() * 1000
+                    ),
+                },
+            )
         return processed
 
     def try_scan(self) -> int | None:
@@ -222,6 +240,9 @@ class AttributionScheduler:
                 .where(
                     CodeAttribution.dev_run_id.in_(expired_dev_runs),
                     CodeAttribution.attribution_status.in_(("pending", "retry_pending")),
+                    # Force-rerun candidates keep their pending state so the
+                    # admin's manual remedy is not undone by the sweeper.
+                    ~_forced,
                 )
                 .values(
                     attribution_status="failed",
@@ -259,7 +280,11 @@ class AttributionScheduler:
                 .where(
                     due,
                     CodeAttribution.retry_count < MAX_RETRY_COUNT,
-                    or_(DevRun.completed_at.is_(None), DevRun.completed_at >= cutoff),
+                    or_(
+                        DevRun.completed_at.is_(None),
+                        DevRun.completed_at >= cutoff,
+                        _forced,
+                    ),
                 )
                 .order_by(CodeAttribution.next_retry_at.asc())
                 .limit(BATCH_SIZE)
@@ -302,7 +327,6 @@ class AttributionScheduler:
             ).rowcount
             session.commit()
         return now if claimed == 1 else None
-
     def _execute(self, dev_run_id: uuid.UUID, lease_at: datetime) -> None:
         try:
             request = self._load_request(dev_run_id)
@@ -401,6 +425,21 @@ class AttributionScheduler:
                 extra={
                     "event": "attribution.stale_result_ignored",
                     "dev_run_id": str(result.request_id),
+                },
+            )
+        else:
+            # 终态写回是采纳统计的数据源头，必须可追溯
+            outcome = "已匹配 MR" if result.result_status == "finalized_match" else "未匹配"
+            logger.info(
+                f"归因完成：{outcome}",
+                extra={
+                    "event": "attribution.completed",
+                    "dev_run_id": str(result.request_id),
+                    "result_status": result.result_status,
+                    "confidence": round(result.confidence, 3),
+                    "matched_mr_iid": result.matched_mr_iid,
+                    "algorithm_version": result.algorithm_version,
+                    "retry_count": values["retry_count"],
                 },
             )
 

@@ -70,6 +70,8 @@
     options: { components: [], persons: [], timeRanges: [] },
     selComponents: [],
     selPersons: [],
+    selVersions: [],
+    verWindow: "30d",
     timeRange: "90d",
     trendMetric: document.body.dataset.dashboard === "test" ? "adoptionRate60" : "adoptionRate80",
     sortBy: "generatedLines",
@@ -424,6 +426,7 @@
       to: iso(to),
       project_key: params.components || [],      // 组件 = 项目
       user_name: params.persons || [],
+      aaw_version: params.versions || [],        // 版本切片（契约 §6.1）
     };
   }
 
@@ -444,6 +447,7 @@
             name: p.project_key,
           })),
           persons: (d.users || []).map((u) => ({ id: u.user_name, name: u.user_name })),
+          versions: (d.aaw_versions || []).map((v) => ({ id: v, name: v })),
           timeRanges: TIME_RANGES,
         },
       };
@@ -470,6 +474,10 @@
         adoptionRate60: p.mr_adoption_rate_60,
         adoptionRate80: adoptionRate(p, 80),
         adoptionRate90: adoptionRate(p, 90),
+        generatedLinesMergeIntent: p.dev_effective_lines_merge_intent,
+        excludedLines: p.excluded_lines,
+        adoptionRate80MergeIntent: p.attribution_rate_80_merge_intent,
+        experimentalShare: p.experimental_share,
       };
 
       const mapComponent = (r) => ({
@@ -484,6 +492,8 @@
         adoptionRate60: r.mr_adoption_rate_60,
         adoptionRate80: adoptionRate(r, 80),
         adoptionRate90: adoptionRate(r, 90),
+        adoptionRate80MergeIntent: r.attribution_rate_80_merge_intent,
+        experimentalShare: r.experimental_share,
         includedInStatistics: r.included_in_statistics !== false,
       });
       const byComponent = (pj.items || []).map(mapComponent);
@@ -510,6 +520,7 @@
         adoptionRate60: r.mr_adoption_rate_60,
         adoptionRate80: adoptionRate(r, 80),
         adoptionRate90: adoptionRate(r, 90),
+        adoptionRate80MergeIntent: r.attribution_rate_80_merge_intent,
       }));
 
       const trend = (tr.points || []).map((pt) => ({
@@ -754,6 +765,7 @@
     const params = {
       components: state.selComponents,
       persons: state.selPersons,
+      versions: state.selVersions,
       timeRange: state.timeRange,
       granularity: "auto",
       dashboard: isTestDashboard ? "testing" : "aaw",
@@ -897,6 +909,7 @@
     const params = {
       components: state.selComponents,
       persons: state.selPersons,
+      versions: state.selVersions,
       timeRange: state.timeRange,
     };
     let masters;
@@ -958,6 +971,19 @@
     $("#factM90").textContent = fmtFull(s.mergedLines90);
     $("#dialVal").textContent = fmtPct(s.adoptionRate80);
     $("#dialVal90").textContent = `90% 一致 ${fmtPct(s.adoptionRate90)}`;
+    // 双口径（C2.10）：合入意图口径与实验性占比，元素只在采纳看板存在。
+    const mi = $("#factMI");
+    if (mi) {
+      mi.textContent = s.adoptionRate80MergeIntent == null ? "—" : fmtPct(s.adoptionRate80MergeIntent);
+      mi.title = s.excludedLines
+        ? `分母 ${fmtFull(s.generatedLinesMergeIntent)} 行（已剔除无关化 ${fmtFull(s.excludedLines)} 行）`
+        : "当前无无关化记录，与全量口径一致";
+    }
+    const exp = $("#factExp");
+    if (exp) {
+      exp.textContent = s.experimentalShare == null ? "—" : fmtPct(s.experimentalShare);
+      exp.title = s.excludedLines ? `无关化 ${fmtFull(s.excludedLines)} / 全部 ${fmtFull(s.generatedLines)} 行` : "—";
+    }
   }
 
   // ── signature dial (bright "sprout" arc) ───────────────
@@ -1316,6 +1342,7 @@
         <td>${fmtFull(r.mergedLines80)}</td>
         <td>${fmtFull(r.mergedLines90)}</td>
         <td>${included ? rateCell(r.adoptionRate80, "80") : excludedRateCell()}</td>
+        <td>${included ? rateCell(r.adoptionRate80MergeIntent, "80") : excludedRateCell()}</td>
         <td>${included ? rateCell(r.adoptionRate90, "90") : excludedRateCell()}</td>`;
       body.appendChild(tr);
     });
@@ -1949,6 +1976,7 @@
     const params = {
       components: state.selComponents,
       persons: state.selPersons,
+      versions: state.selVersions,
       timeRange: state.timeRange,
     };
     StatsApi.aiMasterDetail(masterId, params)
@@ -2306,6 +2334,7 @@
     const params = {
       components: state.selComponents,
       persons: state.selPersons,
+      versions: state.selVersions,
       timeRange: state.timeRange,
     };
     try {
@@ -2351,6 +2380,88 @@
     }, 140);
   });
 
+  // ══ ①.5 VERSIONS · 版本运营 ═════════════════════════════
+  function buildVerWindowToggle() {
+    const wrap = $("#verWindowToggle");
+    if (!wrap) return;
+    wrap.innerHTML = "";
+    [["7d", "7天"], ["30d", "30天"], ["90d", "90天"]].forEach(([value, label]) => {
+      const b = document.createElement("button");
+      b.setAttribute("role", "tab");
+      b.setAttribute("aria-selected", String(state.verWindow === value));
+      b.textContent = label;
+      b.addEventListener("click", () => {
+        if (state.verWindow === value) return;
+        state.verWindow = value;
+        wrap.querySelectorAll("button").forEach((x) =>
+          x.setAttribute("aria-selected", String(x === b)));
+        loadVersionOps();
+      });
+      wrap.appendChild(b);
+    });
+  }
+
+  const VER_WINDOW_DAYS = { "7d": 7, "30d": 30, "90d": 90 };
+
+  async function loadVersionOps() {
+    const body = $("#verOpsBody");
+    if (!body) return;   // 测试看板没有版本运营段
+    const days = VER_WINDOW_DAYS[state.verWindow] ?? 30;
+    try {
+      const roster = await httpGet("/admin/versions/roster", { window_days: days });
+      const set = (id, v) => { const el = $(id); if (el) el.textContent = v; };
+      set("#verNote",
+        `口径：以每人最近一次上报所用版本为准 · 最新版本 ${roster.latest_version ?? "—"}（基准：${roster.release_source === "release_dir" ? "发布目录" : "数据中可见最高版本"}） · 点击行展开升级轨迹`);
+      const stones = [
+        { k: "窗口内活跃人数", v: roster.active_users, cls: "stone--iris" },
+        { k: "已用最新版", v: roster.on_latest, cls: "stone--grass" },
+        { k: "仍在旧版本", v: roster.on_old, cls: roster.on_old ? "stone--tangerine" : "stone--grass" },
+        { k: "非发布版本账号", v: roster.non_release_users, cls: "stone--warn" },
+      ];
+      $("#verOpsStones").innerHTML = stones.map((s) => `
+        <li class="stone ${s.cls}"><span class="stone__k">${esc(s.k)}</span>
+        <span class="stone__v num">${esc(String(s.v))}</span></li>`).join("");
+      body.innerHTML = (roster.items || []).map((row) => `
+        <tr data-email="${esc(row.user_email)}" data-name="${esc(row.user_name)}" style="cursor:pointer;" title="点击展开升级轨迹">
+          <td class="td-name"><span class="component-label">${esc(row.user_name)}</span></td>
+          <td class="mono" style="font-size:12px;">${esc(row.user_email)}</td>
+          <td class="mono">${esc(row.version)}</td>
+          <td class="mono">${row.behind}</td>
+          <td>${esc(fmtAgo(row.last_report_at) ?? "—")}</td>
+          <td class="mono">${row.report_count}</td>
+          <td class="mono">${row.versions_used}</td>
+        </tr>`).join("")
+        || '<tr><td colspan="7" class="muted">窗口内没有停留在旧版本的用户 🎉</td></tr>';
+      const nonRelease = roster.non_release || [];
+      set("#verNonReleaseNote", nonRelease.length
+        ? `另有 ${nonRelease.length} 个非发布版本账号（冒烟/联调，不计入名单）：${nonRelease.slice(0, 6).map((u) => `${u.user_name}(${u.version})`).join("、")}${nonRelease.length > 6 ? " …" : ""}`
+        : "无非发布版本账号");
+    } catch (err) {
+      console.error("版本运营接口请求失败：", err);
+      body.innerHTML = '<tr><td colspan="7" class="muted">版本运营数据加载失败</td></tr>';
+    }
+  }
+
+  async function showVersionTimeline(row) {
+    const card = $("#verTimelineCard");
+    try {
+      const data = await httpGet("/admin/versions/timeline", { user_email: row.dataset.email });
+      $("#verTimelineTitle").textContent =
+        `${row.dataset.name} 的升级轨迹 · ${row.dataset.email}`;
+      $("#verTimelineBody").innerHTML = (data.items || []).map((span) => `
+        <tr>
+          <td class="mono">${esc(span.version)}${span.version === data.latest_version ? " · 最新" : ""}</td>
+          <td>${esc(fmtAgo(span.first_report_at) ?? "—")}</td>
+          <td>${esc(fmtAgo(span.last_report_at) ?? "—")}</td>
+          <td class="mono">${span.report_count}</td>
+        </tr>`).join("");
+      card.style.display = "";
+      card.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    } catch (err) {
+      console.error("升级轨迹请求失败：", err);
+    }
+  }
+
   // ═══ BOOT ═════════════════════════════════════════════
   async function boot() {
     let opt;
@@ -2380,15 +2491,32 @@
       () => state.selPersons,
       (v) => (state.selPersons = v),
       "人员");
+    if (document.getElementById("fVersion")) {
+      selects.fVersion = buildMultiSelect("fVersion",
+        state.options.versions || [],
+        () => state.selVersions,
+        (v) => (state.selVersions = v),
+        "版本");
+    }
     buildSegments();
     buildTrendToggle();
     buildWfStateToggle();
+    buildVerWindowToggle();
     bindSort();
     if (!isTestDashboard) { buildTabs(); bindComponentControls(); bindAiMasterControls(); }
+
+    const verBody = $("#verOpsBody");
+    if (verBody) {
+      verBody.addEventListener("click", (event) => {
+        const row = event.target.closest("tr[data-email]");
+        if (row) showVersionTimeline(row);
+      });
+    }
 
     $("#btnReset").addEventListener("click", () => {
       state.selComponents = [];
       state.selPersons = [];
+      state.selVersions = [];
       state.timeRange = "90d";
       state.compQuery = "";
       state.compSe = [];
@@ -2399,6 +2527,7 @@
       closeAllPops();
       selects.fComponent.renderTrigger();
       selects.fPerson.renderTrigger();
+      if (selects.fVersion) selects.fVersion.renderTrigger();
       buildSegments();
       // 清掉 signature 强制 SE 多选下次重建（trigger 由 buildMultiSelect 内部
       // renderTrigger 渲染，外部改 state 不会自动刷新），并刷新使用状态分段。
@@ -2411,6 +2540,7 @@
     });
 
     await onFilterChange();
+    loadVersionOps();   // 版本运营段独立于看板筛选，仅采纳看板加载
 
     requestAnimationFrame(() => document.body.setAttribute("data-loading", "false"));
   }

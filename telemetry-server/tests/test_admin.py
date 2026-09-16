@@ -282,6 +282,83 @@ def test_registry_rejects_duplicates_and_reserved_ids(client):
     )
 
 
+def test_registry_rejects_junk_input(client):
+    # canonical url 必须是 git 地址形态
+    junk_url = client.post(
+        "/api/v1/admin/registry/components/example-component/repos",
+        json={"repo_key": "junk-repo", "canonical_url": "12"},
+    )
+    assert junk_url.status_code == 400
+    assert junk_url.json()["code"] == "INVALID_FIELD"
+    # repo key 仅允许字母数字开头，含 . / _ -（全局校验处理器统一返回 400）
+    junk_key = client.post(
+        "/api/v1/admin/registry/components/example-component/repos",
+        json={
+            "repo_key": "bad key!",
+            "canonical_url": "git@git.company.com:team/x.git",
+        },
+    )
+    assert junk_key.status_code == 400
+    assert junk_key.json()["code"] == "INVALID_REQUEST"
+    # component id 必须是 slug 形态
+    junk_component = client.post(
+        "/api/v1/admin/registry/components",
+        json={"component_id": "bad id!", "name": "非法 ID"},
+    )
+    assert junk_component.status_code == 400
+    # 合法的组路径 repo key 不受影响
+    ok = client.post(
+        "/api/v1/admin/registry/components/example-component/repos",
+        json={
+            "repo_key": "team/with_under.ts",
+            "canonical_url": "https://git.company.com/team/with_under.ts.git",
+        },
+    )
+    assert ok.status_code == 201
+
+
+def test_logs_support_time_window_filter(client):
+    log_directory = client.app.state.log_directory
+    # 先产生一条已知日志
+    client.post("/api/v1/admin/attribution/scan")
+
+    ok = client.get(
+        "/api/v1/admin/logs",
+        params={"file": "server.log", "lines": 500, "q": "service.started"},
+    )
+    assert ok.status_code == 200
+    body = ok.json()
+    assert body["lines"], "server.log 里应有启动日志"
+
+    # 日期粒度的起点在启动日志之后 → 过滤为空
+    future = client.get(
+        "/api/v1/admin/logs",
+        params={"file": "server.log", "lines": 500, "since": "2099-01-01"},
+    )
+    assert future.status_code == 200
+    assert future.json()["lines"] == []
+
+    # 分钟粒度：以启动日志当分钟为起点应能取到（边界含该分钟头）
+    started_line = next(line for line in body["lines"] if "event=service.started" in line)
+    minute_prefix = started_line[:16]  # "YYYY-MM-DD HH:MM"
+    windowed = client.get(
+        "/api/v1/admin/logs",
+        params={"file": "server.log", "lines": 500, "since": minute_prefix},
+    )
+    assert windowed.status_code == 200
+    assert any(
+        "event=service.started" in line for line in windowed.json()["lines"]
+    )
+
+    # 非法时间窗 → 400 INVALID_FILTER
+    bad = client.get(
+        "/api/v1/admin/logs",
+        params={"file": "server.log", "since": "昨天"},
+    )
+    assert bad.status_code == 400
+    assert bad.json()["code"] == "INVALID_FILTER"
+
+
 def test_component_delete_blocked_while_assigned_to_ai_master(client):
     master = client.post("/api/v1/ai-masters", json={"name": "大师"}).json()
     assigned = client.put(

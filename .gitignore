@@ -39,3 +39,9 @@ Desktop.ini
 # Local Skill Eval runtime
 .skill-eval-data/
 skill-eval/.coverage
+
+# Telemetry local runtime & agent workspace
+.zcode/
+logs/
+telemetry-server/data/
+telemetry-server/logs/

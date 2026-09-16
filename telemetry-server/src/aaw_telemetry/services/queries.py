@@ -116,6 +116,32 @@ def _bucket_date(value: date, granularity: str) -> date:
     return value if granularity == "day" else value - timedelta(days=value.weekday())
 
 
+def _merge_intent_fields(
+    effective: int, attributed_80: int, attributed_90: int, devs: list[DevRun]
+) -> dict[str, Any]:
+    """Dual-caliber adoption (设计 C2.10): the full caliber stays untouched;
+    the merge-intent caliber removes admin-excluded (无关化) lines from the
+    denominator, and the gap exposes the experimental share of generation.
+    """
+    excluded = sum(
+        int(row.code_statistics["total_effective_lines"])
+        for row in devs
+        if row.admin_excluded and row.code_statistics
+    )
+    denominator = effective - excluded
+    return {
+        "excluded_lines": excluded,
+        "dev_effective_lines_merge_intent": denominator,
+        "attribution_rate_80_merge_intent": (
+            attributed_80 / denominator if denominator > 0 else None
+        ),
+        "attribution_rate_90_merge_intent": (
+            attributed_90 / denominator if denominator > 0 else None
+        ),
+        "experimental_share": excluded / effective if effective else None,
+    }
+
+
 def _testing_adoption_fields(filters: Filters, attributions: list[Any]) -> dict[str, Any]:
     if filters.workflow_kind != "testing":
         return {}
@@ -283,6 +309,7 @@ class QueryService:
                 "attributed_lines_90": attributed_90,
                 "attribution_rate_80": attributed_80 / effective_lines if effective_lines else None,
                 "attribution_rate_90": attributed_90 / effective_lines if effective_lines else None,
+                **_merge_intent_fields(effective_lines, attributed_80, attributed_90, statistics_devs),
                 **_testing_adoption_fields(filters, attributions),
             },
             "snapshot": {
@@ -443,11 +470,15 @@ class QueryService:
             attributed_80 = sum(
                 row.attribution.attributed_lines_80 for row in devs if row.attribution
             )
+            attributed_90 = sum(
+                row.attribution.attributed_lines_90 for row in devs if row.attribution
+            )
             attributions = [row.attribution for row in devs if row.attribution]
             return {
                 "used_aaw": any(repo_key in used_repos for repo_key in repo_keys),
                 "effective_lines": effective,
                 "attribution_rate_80": attributed_80 / effective if effective else None,
+                **_merge_intent_fields(effective, attributed_80, attributed_90, devs),
                 "repos": list(repo_keys),
                 **_testing_adoption_fields(filters, attributions),
             }
@@ -526,6 +557,7 @@ class QueryService:
                 "attribution_rate_90": (
                     attributed_90 / effective if rates_included and effective else None
                 ),
+                **_merge_intent_fields(effective, attributed_80, attributed_90, metric_devs),
                 **_testing_adoption_fields(filters, statistics_attrs),
             }
             if group == "repository":
