@@ -3,6 +3,7 @@ from __future__ import annotations
 import time
 import uuid
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 from aaw_telemetry.models import CodeAttribution, DevRun
 from tests.conftest import message, sync, upload_diff
@@ -243,6 +244,92 @@ def test_force_retry_rejects_not_queued(client):
     )
     assert response.status_code == 409
     assert response.json()["code"] == "RECORD_NOT_QUEUED"
+
+
+def _archive_diff(client, message_id: str) -> Path:
+    """把补丁置为过期终态并跑一轮归档，返回归档后的文件路径。"""
+    from sqlalchemy import select
+
+    from aaw_telemetry.models import ObjectUpload
+
+    with _db_session(client) as session:
+        upload = session.scalar(
+            select(ObjectUpload).where(ObjectUpload.owner_id == uuid.UUID(message_id))
+        )
+        upload.expires_at = datetime.now(UTC) - timedelta(days=1)
+        session.get(CodeAttribution, uuid.UUID(message_id)).attribution_status = (
+            "finalized_match"
+        )
+        session.commit()
+    assert client.app.state.diff_archiver.archive_once() == 1
+    with _db_session(client) as session:
+        upload = session.scalar(
+            select(ObjectUpload).where(ObjectUpload.owner_id == uuid.UUID(message_id))
+        )
+        return Path(client.app.state.settings.object_storage_dir) / upload.archive_key
+
+
+def test_force_retry_restores_archived_diff_and_reruns(client):
+    """补丁已归档时强制重跑：先把文件恢复原位，重跑才能读到 diff。"""
+    from sqlalchemy import select
+
+    from aaw_telemetry.models import ObjectUpload
+
+    message_id = _make_attribution(client)
+    archive_path = _archive_diff(client, message_id)
+    root = Path(client.app.state.settings.object_storage_dir)
+    live_path = root / f"step-diffs/{message_id}.diff"
+    assert not live_path.exists()
+
+    forced = client.post(
+        f"/api/v1/admin/attribution/records/{message_id}/force-retry"
+    )
+    assert forced.status_code == 200, forced.text
+    assert live_path.is_file()
+    # 归档副本保留作备份，恢复是 copy 而不是 move。
+    assert archive_path.is_file()
+
+    with _db_session(client) as session:
+        upload = session.scalar(
+            select(ObjectUpload).where(ObjectUpload.owner_id == uuid.UUID(message_id))
+        )
+        assert upload.status == "confirmed"
+        assert upload.archive_key is None
+        assert upload.archived_at is None
+        # 保留期顺延：否则下一轮归档会立刻把文件再搬走，重跑窗口只剩一个周期。
+        # SQLite 存的是 naive datetime，去掉 tzinfo 再比。
+        assert upload.expires_at.replace(tzinfo=None) > datetime.now(UTC).replace(tzinfo=None)
+
+    # 归档条件不再成立，不会刚恢复就被搬回去。
+    assert client.app.state.diff_archiver.archive_once() == 0
+    assert live_path.is_file()
+
+    # 调度器能重新读到 diff，重跑走到终态。
+    client.post("/api/v1/admin/attribution/scan")
+    item = _wait_for_status(client, message_id, "finalized_match")
+    assert item["attribution_status"] == "finalized_match"
+
+
+def test_force_retry_tolerates_missing_archive_file(client):
+    """归档文件本身丢了：照样重置状态，只是重跑会因缺 diff 失败，不抛给调用方。"""
+    from sqlalchemy import select
+
+    from aaw_telemetry.models import ObjectUpload
+
+    message_id = _make_attribution(client)
+    archive_path = _archive_diff(client, message_id)
+    archive_path.unlink()
+
+    forced = client.post(
+        f"/api/v1/admin/attribution/records/{message_id}/force-retry"
+    )
+    assert forced.status_code == 200, forced.text
+    assert forced.json()["attribution_status"] == "pending"
+    with _db_session(client) as session:
+        upload = session.scalar(
+            select(ObjectUpload).where(ObjectUpload.owner_id == uuid.UUID(message_id))
+        )
+        assert upload.status == "archived"
 
 
 # ----------------------------------------------------------------------

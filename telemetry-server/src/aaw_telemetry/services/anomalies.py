@@ -2,13 +2,15 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import re
 import uuid
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import Any, Protocol
+from typing import Any, Iterator, Protocol
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -32,6 +34,8 @@ from ..models import (
     TelemetryMessage,
     WorkflowRun,
 )
+
+logger = logging.getLogger("aaw_telemetry.anomalies")
 
 SEMVER = re.compile(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$")
 ISSUE_ASSIGNEES = {"张轶勃", "徐哲威", "宋东方", "张立肖", "孙杨宇鑫"}
@@ -205,6 +209,38 @@ class OwnershipProvider(Protocol):
 
 def _now() -> datetime:
     return datetime.now(UTC)
+
+
+@contextmanager
+def startup_lock(engine, name: str, timeout_seconds: int = 10) -> Iterator[bool]:
+    """启动补种子时串行化多 worker 的执行，拿到锁 yield True，没拿到 yield False。
+
+    MySQL 的 GET_LOCK 按名字在整个 server 上生效，但取、放必须落在同一条连接上。
+    所以这里用一条专门的连接占住锁、用完再放——不能挂在 session 上：被包住的
+    补种子会自己 commit，commit 会把 session 的连接还回连接池，RELEASE_LOCK 就
+    可能跑到另一条物理连接上去，锁等于没放。SQLite / 其他方言没有对应能力，
+    直接放行（唯一约束兜底）。
+    """
+    if engine.dialect.name != "mysql":
+        yield True
+        return
+    with engine.connect() as lock_conn:
+        acquired = bool(
+            lock_conn.execute(
+                text("SELECT GET_LOCK(:name, :timeout)"),
+                {"name": name, "timeout": timeout_seconds},
+            ).scalar()
+        )
+        if not acquired:
+            logger.warning(
+                "启动锁未获取到，跳过内置规则补齐",
+                extra={"event": "anomaly.startup_lock_timeout", "lock": name},
+            )
+        try:
+            yield acquired
+        finally:
+            if acquired:
+                lock_conn.execute(text("SELECT RELEASE_LOCK(:name)"), {"name": name})
 
 
 def _aware(value: datetime) -> datetime:
@@ -938,6 +974,9 @@ class AnomalyService:
         已存在的规则保持管理员改过的配置，但展示名跟随内置文案：
         名字还停在历史内置文案上的规则，升级后自动换新名。
         下架的内置检测类型：对应规则标记删除并按"规则删除"收尾事件，留审计。
+
+        多 worker 并发启动时每个进程都会跑这里：插入用 SAVEPOINT 逐条隔离，
+        撞上唯一约束（0026）只作废这一条，不牵连本轮已写入的其他规则。
         """
         rules = {
             row.detector_type: row
@@ -982,8 +1021,22 @@ class AnomalyService:
                     created_at=now,
                     updated_at=now,
                 )
-                self.session.add(rule)
-                self.session.flush()
+                try:
+                    # add 也要放进 SAVEPOINT：回滚时该对象才会被逐出 session，
+                    # 否则它仍是待插入状态，最后 commit 会再撞一次约束。
+                    with self.session.begin_nested():
+                        self.session.add(rule)
+                        self.session.flush()
+                except IntegrityError:
+                    # 别的 worker 抢先插入了同一条；它已经落在库里，本轮跳过即可。
+                    logger.info(
+                        "内置规则已由其他进程创建，跳过",
+                        extra={
+                            "event": "anomaly.rule_seed_conflict",
+                            "detector_type": spec.code,
+                        },
+                    )
+                    continue
                 self._audit(rule, "created", actor, None, _rule_payload(rule), rule.change_reason)
                 created += 1
             elif rule.name != spec.name:
@@ -1071,8 +1124,17 @@ class AnomalyService:
             created_at=now,
             updated_at=now,
         )
-        self.session.add(rule)
-        self.session.flush()
+        try:
+            with self.session.begin_nested():
+                self.session.add(rule)
+                self.session.flush()
+        except IntegrityError:
+            # 上面的预检与插入之间被别的请求抢先建了同一条，按同一种冲突报错。
+            raise ApiError(
+                409,
+                "RULE_DETECTOR_ALREADY_CONFIGURED",
+                "该检测类型已有规则，请在规则管理中编辑",
+            ) from None
         self._audit(rule, "created", actor, None, _rule_payload(rule), data.get("change_reason"))
         self.session.commit()
         return _rule_payload(rule)
