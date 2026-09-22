@@ -338,7 +338,7 @@
 
   function renderPanel(entry) {
     return '<section class="entry-panel" id="panel-' + entry + '" role="tabpanel" aria-labelledby="tab-' + entry +
-      '" tabindex="0"' + (entry === "sr" ? "" : " hidden") + '><div class="diagram-shell"><div class="diagram-viewport" data-camera-viewport tabindex="0" role="group" aria-label="' + entry.toUpperCase() + ' 入口完整流程图"><div class="diagram-overlay" role="group" aria-label="流程图图例与视图控制"><div class="diagram-legend"><span class="legend-flow">普通流程</span><span class="legend-loop">对齐 / 决策</span><span class="legend-gate">质量门禁</span><span class="diagram-hint">点击节点查看详情</span></div><div class="camera-controls" role="group" aria-label="流程图视图控制"><button type="button" data-camera-action="zoom-out" aria-label="缩小流程图">−</button><output data-camera-readout>100%</output><button type="button" data-camera-action="zoom-in" aria-label="放大流程图">＋</button><button type="button" data-camera-action="fit" aria-label="适配流程图">适配</button></div></div><div class="diagram-camera" data-camera><div class="diagram" data-camera-content><svg class="flow-connectors" data-flow-connectors aria-hidden="true" focusable="false"></svg>' + renderFlow(entry) + "</div></div>" +
+      '" tabindex="0"' + (entry === "sr" ? "" : " hidden") + '><div class="diagram-shell"><div class="diagram-viewport" data-camera-viewport tabindex="0" role="group" aria-label="' + entry.toUpperCase() + ' 入口完整流程图"><div class="diagram-overlay" role="group" aria-label="流程图图例与视图控制"><div class="diagram-legend"><span class="legend-flow">普通流程</span><span class="legend-loop">对齐 / 决策</span><span class="legend-gate">质量门禁</span><span class="diagram-hint">点击节点查看详情</span></div><div class="camera-controls" role="group" aria-label="流程图视图控制"><button type="button" data-camera-action="zoom-out" aria-label="缩小流程图">−</button><output data-camera-readout>120%</output><button type="button" data-camera-action="zoom-in" aria-label="放大流程图">＋</button><button type="button" data-camera-action="fit" aria-label="适配流程图">适配</button></div></div><div class="diagram-camera" data-camera><div class="diagram" data-camera-content><svg class="flow-connectors" data-flow-connectors aria-hidden="true" focusable="false"></svg>' + renderFlow(entry) + "</div></div>" +
       '<section class="node-detail" id="detail-' + entry + '" tabindex="-1" aria-labelledby="detail-title-' + entry + '" hidden></section></div></div>' +
       directory(entry) + "</section>";
   }
@@ -394,6 +394,7 @@
     const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
     const svgNamespace = "http://www.w3.org/2000/svg";
     const markerId = (tone = "default") => "aaw-flow-arrow-" + panel.id + (tone === "default" ? "" : "-" + tone);
+    const defaultCameraScale = 1.2;
     let flowEdges = [];
     let connectorDefs = null;
     let edgeGroup = null;
@@ -669,15 +670,33 @@
       };
       cameraFrame = window.requestAnimationFrame(step);
     };
+    const centeredTarget = (scale) => {
+      const width = Math.max(1, content.offsetWidth);
+      const height = Math.max(1, content.offsetHeight);
+      return {
+        scale,
+        x: (viewport.clientWidth - width * scale) / 2,
+        y: (viewport.clientHeight - height * scale) / 2
+      };
+    };
+    const defaultView = (options = {}) => {
+      releaseScale();
+      const target = centeredTarget(defaultCameraScale);
+      if (options.animate) animateCamera(target, options.duration || 420);
+      else {
+        stopCameraMotion();
+        setCamera(target);
+        commitScale();
+        renderConnectors();
+      }
+    };
     const fit = (options = {}) => {
       releaseScale();
       const padding = 42;
       const width = Math.max(1, content.offsetWidth);
       const height = Math.max(1, content.offsetHeight);
       const scale = Math.min(1, (viewport.clientWidth - padding) / width, (viewport.clientHeight - padding) / height);
-      const target = { scale: clamp(scale, .7, 1), x: 0, y: 0 };
-      target.x = (viewport.clientWidth - width * target.scale) / 2;
-      target.y = (viewport.clientHeight - height * target.scale) / 2;
+      const target = centeredTarget(clamp(scale, .7, 1));
       if (options.animate) animateCamera(target, options.duration || 420);
       else {
         stopCameraMotion();
@@ -715,10 +734,13 @@
         y: viewport.clientHeight / 2 - contentY * nextScale
       }, 420);
     };
-    const resetView = () => { closeDetails(panel); fit({ animate: true, duration: 420 }); };
+    const resetView = () => { closeDetails(panel); defaultView({ animate: true, duration: 420 }); };
     panel.querySelectorAll("[data-camera-action]").forEach((button) => {
       button.addEventListener("click", () => {
-        if (button.dataset.cameraAction === "fit") resetView();
+        if (button.dataset.cameraAction === "fit") {
+          closeDetails(panel);
+          fit({ animate: true, duration: 420 });
+        }
         if (button.dataset.cameraAction === "zoom-in") zoom(.1);
         if (button.dataset.cameraAction === "zoom-out") zoom(-.1);
       });
@@ -770,7 +792,7 @@
         if (hoveredNode === button) clearHover();
       });
     });
-    panel._fitCamera = fit;
+    panel._fitCamera = defaultView;
     panel._focusCamera = focus;
     panel._resetView = resetView;
     panel._stopCameraMotion = stopCameraMotion;
@@ -783,7 +805,7 @@
       if (event.target.closest("[data-node], [data-camera-action], .entry-tab")) return;
       resetView();
     });
-    requestAnimationFrame(fit);
+    requestAnimationFrame(defaultView);
   }
 
   tabs.forEach((tab) => setupCamera(document.getElementById(tab.getAttribute("aria-controls"))));
