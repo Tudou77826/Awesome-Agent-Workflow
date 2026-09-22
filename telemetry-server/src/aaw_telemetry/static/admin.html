@@ -96,22 +96,6 @@
       padding-top: 14px; border-top: 1px solid var(--edge);
     }
     .side-foot .btn { justify-content: center; }
-    /* 当前视角：把异常总览的查看范围收进侧栏，成为全站的落地视角 */
-    .side-identity { display: grid; gap: 6px; padding: 0 6px; }
-    .side-identity .multi { min-width: 0; max-width: none; width: 100%; }
-    /* 浮层默认 right:0、向下展开（贴右边缘的控件适用）。这个控件在左侧栏底部，
-       照默认会往左顶出屏幕、往下顶出视口，还会把 .side 撑出滚动条。所以改成
-       贴控件左边缘向右展开、向上展开，宽度收进侧栏，保证完整可见。 */
-    .side-identity .pop {
-      left: 0; right: auto; bottom: calc(100% + 8px); top: auto;
-      width: 100%; min-width: 0; max-width: none;
-      max-height: calc(100vh - 160px);
-    }
-    .side-identity .pop__list { max-height: calc(100vh - 240px); }
-    .side-identity .pop__opt > span:first-child {
-      min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-    }
-    .side-identity .pop__opt .count { flex: none; }
     .bar__sync {
       display: flex; align-items: center; gap: 8px; padding: 0 6px;
       font-family: var(--mono); font-size: 12.5px; color: var(--ink-soft);
@@ -630,9 +614,6 @@
       .side-nav__label { padding: 0 4px 0 0; }
       .portal-nav button, .portal-nav a { width: auto; }
       .side-foot { margin-top: 0; margin-left: auto; display: flex; align-items: center; gap: 12px; border-top: 0; padding-top: 0; }
-      /* 窄屏侧栏在页面顶部，改回向下展开，否则浮层会顶出上边 */
-      .side-identity .pop { top: calc(100% + 8px); bottom: auto; }
-      .side-identity .pop__list { max-height: 300px; }
     }
     @media (max-width: 900px) { .grid.halves { grid-template-columns: 1fr; } }
   </style>
@@ -678,10 +659,6 @@
   </nav>
 
   <div class="side-foot">
-    <div class="side-identity">
-      <span class="side-nav__label">当前视角</span>
-      <div class="multi" id="anMaster" data-placeholder="未选择"></div>
-    </div>
     <div class="bar__sync">
       <span class="dot" id="syncDot" aria-hidden="true"></span>
       <span id="lastSync">—</span>
@@ -1038,6 +1015,7 @@
 
         异常总览
       </div>
+      <div class="an-scope-label">查看范围 <div class="multi" id="anMaster" data-placeholder="未选择"></div></div>
       <button class="btn" id="anRefresh">刷新</button>
     </div>
 
@@ -1055,7 +1033,7 @@
       <div class="table-wrap" style="overflow-x:auto;">
         <table class="an-event-table"><thead><tr><th>问题<span class="an-th-help" role="note" tabindex="0" title="问题由启用的检测规则判定；下方说明即该规则的判定条件，带底色的数值是当前生效的参数。">?</span></th><th>用户</th><th>仓库</th><th>持续时间</th><th>处理</th></tr></thead><tbody id="anEventBody"></tbody></table>
       </div>
-      <div class="an-empty" id="anEventEmpty" hidden><strong id="anEventEmptyTitle">当前视角下不存在异常</strong><span id="anEventEmptyNote">换一个视角或异常类型再试。</span></div>
+      <div class="an-empty" id="anEventEmpty" hidden><strong id="anEventEmptyTitle">当前范围不存在异常</strong><span id="anEventEmptyNote">换个查看范围或异常类型再试。</span></div>
       <div class="toolbar" id="anEventPager" style="margin:12px 0 0; justify-content:flex-end;"></div>
     </div>
   </section>
@@ -3161,10 +3139,11 @@ const anomalyWrite = (path, options = {}) => api(path, {
   headers: { "Content-Type": "application/json", "X-CSRF-Token": anCsrf },
 });
 
-/* 当前视角：认领的 AI Master 记在本地，刷新/切页后不再回到第一个人。
+/* 查看范围：选定的 AI Master 记在本地，刷新/切页后不再回到第一个人。
+   只服务异常总览这一页，就地放在页头，不再对外声称是全站身份。
    存 id 而不是名字——名字可以重命名，id 稳定。读写都兜异常：内嵌内核里
    localStorage 可能不可用（同 askDialog 注释里 prompt/confirm 的情况），
-   读不到就当未认领，不能让认领失败把整个模块带崩。 */
+   读不到就当未选择，不能让它把整个模块带崩。 */
 const OPS_VIEW_KEY = "aaw.ops.view";
 
 function readSavedView() {
@@ -3405,7 +3384,7 @@ async function loadAnomalyEvents() {
   const master = anMasterSelect.value;
   if (!master) {
     $("#anEventBody").innerHTML = "";
-    showAnomalyEmpty("还没选择当前视角", "在左下角选好视角后，这里会列出命中的异常。");
+    showAnomalyEmpty("还没选择查看范围", "选好查看范围后，这里会列出命中的异常。");
     anEventsCache = [];
     anEventPager.render(0);
     return;
@@ -3435,7 +3414,7 @@ async function loadAnomalyEvents() {
     anEventsCache = events.items;
     renderAnomalyEventPage();
     if (events.items.length) $("#anEventEmpty").hidden = true;
-    else showAnomalyEmpty("当前视角下不存在异常", "换一个视角或异常类型再试。");
+    else showAnomalyEmpty("当前范围不存在异常", "换个查看范围或异常类型再试。");
     positionAnomalyPops();
     markSync(true);
   } catch (error) {
@@ -3529,8 +3508,8 @@ async function requestAnomalyArchive(id) {
 }
 
 /* 申请屏蔽的申请人预填：优先用屏蔽对象所在仓库的归属 AI Master（服务端权威数据），
-   取不到才退回当前认领的视角。只是预填，用户可改——不保证绝对正确。
-   视角停在「组织全局」时不是某个人，就不填人名。 */
+   取不到才退回异常总览里选的查看范围。只是预填，用户可改——不保证绝对正确。
+   范围停在「组织全局」时不是某个人，就不填人名。 */
 function archiveRequesterName({ repository, masterName } = {}) {
   if (masterName) return masterName;
   const fromRepo = ownerNameForRepo(repository);
