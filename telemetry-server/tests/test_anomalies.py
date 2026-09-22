@@ -86,6 +86,21 @@ def test_anomaly_ui_is_part_of_existing_admin_console(client):
     assert client.get("/anomalies").status_code == 404
 
 
+def test_detector_catalog_is_public_but_rules_stay_admin_only(client):
+    """检测类型目录随按-master 的异常查看一起公开，规则管理仍需管理员。
+
+    目录只是内置检测器的静态元数据（判定句、默认参数），非管理员使用者看自己
+    异常时的"?"提示要用它；若它也要密码，非管理员一进页面就取不到目录、整页空白。
+    """
+    catalog = client.get("/api/v1/anomalies/detector-types")
+    assert catalog.status_code == 200, catalog.text
+    items = catalog.json()["items"]
+    assert {item["code"] for item in items} == set(DETECTOR_SPECS)
+    # 公开的是静态目录，不是带启停状态与审计的规则
+    assert all("status" not in item for item in items)
+    assert client.get("/api/v1/anomalies/rules").status_code == 401
+
+
 def test_admin_session_requires_password_and_csrf(client):
     assert client.get("/api/v1/anomalies/rules").status_code == 401
     assert client.get("/api/v1/anomalies/events?admin_view=true").status_code == 401
