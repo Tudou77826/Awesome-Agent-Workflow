@@ -20,7 +20,12 @@ def upgrade() -> None:
         "issue",
         sa.Column("reporter", sa.String(100), nullable=False, server_default="未知提出人"),
     )
-    op.alter_column("issue", "reporter", server_default=None)
+    if op.get_bind().dialect.name == "sqlite":
+        # SQLite 不支持 ALTER COLUMN DROP DEFAULT，用 batch 重建去掉 server_default。
+        with op.batch_alter_table("issue", recreate="always") as batch:
+            batch.alter_column("reporter", existing_type=sa.String(100), server_default=None)
+    else:
+        op.alter_column("issue", "reporter", server_default=None)
 
 
 def downgrade() -> None:

@@ -12,6 +12,7 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from pathlib import Path
 
 from fastapi.responses import RedirectResponse
@@ -26,6 +27,36 @@ app = create_app(settings)
 _PORTAL_DIR = Path(__file__).resolve().parents[2] / "telemetry-front" / "portal"
 if _PORTAL_DIR.is_dir():
     app.mount("/portal", StaticFiles(directory=_PORTAL_DIR, html=True), name="portal")
+
+
+@app.on_event("startup")
+async def _seed_telemetry_filters() -> None:
+    """首启时把 CLI 内置 yaml 灌成 v1，运营后台「上报过滤」页开箱即有当前值。"""
+    import yaml
+    from sqlalchemy import select
+
+    from aaw_telemetry.database import build_session_factory
+    from aaw_telemetry.models import TelemetryFilterConfig
+    from aaw_telemetry.services.telemetry_filters import validate_filters
+
+    builtin = (
+        Path(__file__).resolve().parents[2]
+        / "skills/aaw-workflow/scripts/cli/telemetry_config.yaml"
+    )
+    if not builtin.is_file():
+        return
+    filters = yaml.safe_load(builtin.read_text(encoding="utf-8"))["filters"]
+    with build_session_factory(app.state.engine)() as session:
+        if session.scalar(select(TelemetryFilterConfig).limit(1)) is None:
+            session.add(
+                TelemetryFilterConfig(
+                    version=1,
+                    filters=validate_filters(filters),
+                    updated_by="本地演示种子",
+                    updated_at=datetime.now(UTC),
+                )
+            )
+            session.commit()
 
 
 @app.get("/", include_in_schema=False)

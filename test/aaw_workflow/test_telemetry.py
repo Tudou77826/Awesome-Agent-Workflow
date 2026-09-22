@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -25,7 +27,7 @@ from cli.telemetry import (  # noqa: E402
     telemetry_config,
     unix_ms,
 )
-from cli.telemetry_config import TelemetryConfigError, load_config
+from cli.telemetry_config import TelemetryConfigError, _load_config_cached, load_config
 
 
 class TelemetryTests(unittest.TestCase):
@@ -574,28 +576,26 @@ class TelemetryTests(unittest.TestCase):
         config_path.write_text(content, "utf-8")
 
     def test_config_defaults(self) -> None:
-        load_config.cache_clear()
+        _load_config_cached.cache_clear()
         with tempfile.TemporaryDirectory() as temp:
             config = telemetry_config(Path(temp))
         self.assertTrue(config.enabled)
         self.assertEqual(10485760, config.max_file_bytes)
-        self.assertIn(".md", config.diff_excluded_suffixes)
-        self.assertIn(".markdown", config.diff_excluded_suffixes)
+        self.assertIn(".md", config.excluded_suffixes)
+        self.assertIn(".markdown", config.excluded_suffixes)
+        self.assertIn(".png", config.excluded_suffixes)
 
     def test_config_default_filters_match_builtin_rules(self) -> None:
-        load_config.cache_clear()
+        _load_config_cached.cache_clear()
         with tempfile.TemporaryDirectory() as temp:
             config = telemetry_config(Path(temp))
-        self.assertTrue(config.is_sensitive(".env", b"x"))
-        self.assertTrue(config.is_sensitive("config/secrets.yaml", b"x"))
-        self.assertTrue(config.is_sensitive("id_rsa.pem", b"x"))
-        self.assertTrue(config.is_sensitive("app.py", b"password: hunter2"))
-        self.assertTrue(config.is_sensitive("a.txt", b"AKIA0123456789ABCDEF"))
-        self.assertTrue(config.is_sensitive("k.txt", b"-----BEGIN RSA PRIVATE KEY-----"))
-        self.assertFalse(config.is_sensitive("main.py", b"print(1)"))
+        self.assertTrue(config.is_suffix_excluded("docs/readme.md"))
+        self.assertTrue(config.is_suffix_excluded("assets/logo.png"))
+        self.assertTrue(config.excluded_dir("node_modules/x.js"))
+        self.assertFalse(config.is_suffix_excluded("src/main.py"))
 
     def test_project_config_disables_telemetry(self) -> None:
-        load_config.cache_clear()
+        _load_config_cached.cache_clear()
         with tempfile.TemporaryDirectory() as temp, patch.dict(os.environ, {"AAW_TELEMETRY_ENABLED": ""}):
             root = Path(temp)
             self._write_project_config(root, "enabled: false\n")
@@ -603,7 +603,7 @@ class TelemetryTests(unittest.TestCase):
 
     def test_environment_variable_overrides_project_config(self) -> None:
         for enabled in ("true", "false"):
-            load_config.cache_clear()
+            _load_config_cached.cache_clear()
             with self.subTest(enabled=enabled), tempfile.TemporaryDirectory() as temp, patch.dict(
                 os.environ, {"AAW_TELEMETRY_ENABLED": enabled}
             ):
@@ -613,26 +613,25 @@ class TelemetryTests(unittest.TestCase):
                 self.assertEqual(enabled == "true", telemetry_config(root).enabled)
 
     def test_invalid_environment_variable_raises_telemetry_error(self) -> None:
-        load_config.cache_clear()
+        _load_config_cached.cache_clear()
         with tempfile.TemporaryDirectory() as temp, patch.dict(os.environ, {"AAW_TELEMETRY_ENABLED": "maybe"}):
             with self.assertRaisesRegex(TelemetryError, "AAW_TELEMETRY_ENABLED"):
                 telemetry_config(Path(temp))
 
     def test_project_config_replaces_filters_by_key(self) -> None:
-        load_config.cache_clear()
+        _load_config_cached.cache_clear()
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             self._write_project_config(
                 root,
-                "filters:\n  max_file_bytes: 8\n  sensitive_names: []\n",
+                "filters:\n  max_file_bytes: 8\n  excluded_suffixes: ['.dat']\n",
             )
             config = telemetry_config(root)
         self.assertEqual(8, config.max_file_bytes)
-        self.assertFalse(config.is_sensitive(".env", b"x"))
-        self.assertTrue(config.is_sensitive("k.txt", b"-----BEGIN RSA PRIVATE KEY-----"))
+        self.assertEqual(frozenset({".dat"}), config.excluded_suffixes)
 
     def test_disabled_client_does_not_send_requests(self) -> None:
-        load_config.cache_clear()
+        _load_config_cached.cache_clear()
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             self._write_project_config(root, "enabled: false\n")
@@ -643,27 +642,8 @@ class TelemetryTests(unittest.TestCase):
             urlopen.assert_not_called()
         self.assertEqual({"status": "disabled"}, result)
 
-    def test_worktree_files_exclude_sensitive_files(self) -> None:
-        load_config.cache_clear()
-        with tempfile.TemporaryDirectory() as temp:
-            root = Path(temp)
-            subprocess.run(["git", "init", "--quiet"], cwd=root, check=True)
-            (root / ".env").write_text("SECRET=1\n", "utf-8")
-            (root / "credentials.yaml").write_text("password: hunter2\n", "utf-8")
-            (root / "app.py").write_text("print(1)\n", "utf-8")
-            subprocess.run(["git", "add", "."], cwd=root, check=True)
-
-            store = self._store(root)
-            files, flags = store._worktree_files()
-        self.assertNotIn(".env", files)
-        self.assertNotIn("credentials.yaml", files)
-        self.assertIn("app.py", files)
-        sensitive_flags = [flag for flag in flags if flag.startswith("sensitive_file_excluded:")]
-        self.assertTrue(any(flag.endswith(":.env") for flag in sensitive_flags))
-        self.assertTrue(any(flag.endswith(":credentials.yaml") for flag in sensitive_flags))
-
     def test_bad_project_config_raises_telemetry_error(self) -> None:
-        load_config.cache_clear()
+        _load_config_cached.cache_clear()
         with tempfile.TemporaryDirectory() as temp, patch.dict(os.environ, {"AAW_TELEMETRY_ENABLED": ""}):
             root = Path(temp)
             self._write_project_config(root, "enabled: \"yes\"\n")
@@ -671,7 +651,7 @@ class TelemetryTests(unittest.TestCase):
                 telemetry_config(root)
 
     def test_telemetry_config_error_is_not_wrapped_as_telemetry_error(self) -> None:
-        load_config.cache_clear()
+        _load_config_cached.cache_clear()
         with tempfile.TemporaryDirectory() as temp, patch.dict(os.environ, {"AAW_TELEMETRY_ENABLED": ""}):
             root = Path(temp)
             self._write_project_config(root, "enabled: \"yes\"\n")
@@ -679,15 +659,24 @@ class TelemetryTests(unittest.TestCase):
                 load_config(root)
 
     def test_default_excluded_dirs_cover_builtin_list(self) -> None:
-        load_config.cache_clear()
+        _load_config_cached.cache_clear()
         with tempfile.TemporaryDirectory() as temp:
             config = telemetry_config(Path(temp))
-        self.assertEqual(16, len(config.excluded_dirs))
-        for directory in ("node_modules", "dist", "vendor", ".sdd", ".aaw", ".idea"):
+        self.assertEqual(18, len(config.excluded_dirs))
+        for directory in (
+            "node_modules",
+            "dist",
+            "vendor",
+            ".sdd",
+            ".aaw",
+            ".idea",
+            ".codecheckcli",
+            ".cac",
+        ):
             self.assertIn(directory, config.excluded_dirs)
 
     def test_excluded_dirs_are_anchored_at_repository_root(self) -> None:
-        load_config.cache_clear()
+        _load_config_cached.cache_clear()
         with tempfile.TemporaryDirectory() as temp:
             config = telemetry_config(Path(temp))
         self.assertEqual("node_modules", config.excluded_dir("node_modules/pkg/index.js"))
@@ -696,7 +685,7 @@ class TelemetryTests(unittest.TestCase):
         self.assertIsNone(config.excluded_dir("dist"))
 
     def test_excluded_dirs_support_multi_segment_paths(self) -> None:
-        load_config.cache_clear()
+        _load_config_cached.cache_clear()
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             self._write_project_config(root, "filters:\n  excluded_dirs: ['src/generated']\n")
@@ -705,7 +694,7 @@ class TelemetryTests(unittest.TestCase):
         self.assertIsNone(config.excluded_dir("src/main.py"))
 
     def test_excluded_dirs_match_is_case_insensitive(self) -> None:
-        load_config.cache_clear()
+        _load_config_cached.cache_clear()
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             self._write_project_config(root, "filters:\n  excluded_dirs: ['Data']\n")
@@ -714,17 +703,17 @@ class TelemetryTests(unittest.TestCase):
         self.assertEqual("data", config.excluded_dir("DATA/x.txt"))
 
     def test_project_config_appends_excluded_dirs(self) -> None:
-        load_config.cache_clear()
+        _load_config_cached.cache_clear()
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             self._write_project_config(root, "filters:\n  excluded_dirs: ['data']\n")
             config = telemetry_config(root)
-        self.assertEqual(17, len(config.excluded_dirs))
+        self.assertEqual(19, len(config.excluded_dirs))
         self.assertIn("data", config.excluded_dirs)
         self.assertIn("node_modules", config.excluded_dirs)
 
     def test_project_config_can_remove_builtin_excluded_dir(self) -> None:
-        load_config.cache_clear()
+        _load_config_cached.cache_clear()
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             self._write_project_config(root, "filters:\n  excluded_dirs: ['!vendor']\n")
@@ -734,7 +723,7 @@ class TelemetryTests(unittest.TestCase):
         self.assertIsNone(config.excluded_dir("vendor/lib.go"))
 
     def test_project_config_mixes_added_and_removed_excluded_dirs(self) -> None:
-        load_config.cache_clear()
+        _load_config_cached.cache_clear()
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             self._write_project_config(root, "filters:\n  excluded_dirs: ['data', '!vendor', '!dist']\n")
@@ -746,7 +735,7 @@ class TelemetryTests(unittest.TestCase):
 
     def test_invalid_excluded_dirs_raise_telemetry_error(self) -> None:
         for value in ("['']", "['/etc']", "['../outside']", "['!!x']", "'node_modules'"):
-            load_config.cache_clear()
+            _load_config_cached.cache_clear()
             with self.subTest(value=value), tempfile.TemporaryDirectory() as temp:
                 root = Path(temp)
                 self._write_project_config(root, f"filters:\n  excluded_dirs: {value}\n")
@@ -754,7 +743,7 @@ class TelemetryTests(unittest.TestCase):
                     telemetry_config(root)
 
     def test_worktree_files_exclude_configured_directories(self) -> None:
-        load_config.cache_clear()
+        _load_config_cached.cache_clear()
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             subprocess.run(["git", "init", "--quiet"], cwd=root, check=True)
@@ -776,7 +765,7 @@ class TelemetryTests(unittest.TestCase):
         self.assertIn("dir_excluded:.sdd", flags)
 
     def test_directory_exclusion_flag_is_recorded_once_per_directory(self) -> None:
-        load_config.cache_clear()
+        _load_config_cached.cache_clear()
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             subprocess.run(["git", "init", "--quiet"], cwd=root, check=True)
@@ -789,19 +778,128 @@ class TelemetryTests(unittest.TestCase):
             _files, flags = store._worktree_files()
         self.assertEqual(1, flags.count("dir_excluded:node_modules"))
 
-    def test_directory_exclusion_takes_precedence_over_sensitive_name(self) -> None:
-        load_config.cache_clear()
+    def test_directory_exclusion_takes_precedence_over_suffix_exclusion(self) -> None:
+        _load_config_cached.cache_clear()
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             subprocess.run(["git", "init", "--quiet"], cwd=root, check=True)
-            secrets = root / "node_modules" / ".env"
-            secrets.parent.mkdir(parents=True)
-            secrets.write_text("SECRET=1\n", "utf-8")
+            image = root / "node_modules" / "logo.png"
+            image.parent.mkdir(parents=True)
+            image.write_bytes(b"\x89PNG")
 
             store = self._store(root)
             files, flags = store._worktree_files()
         self.assertEqual({}, files)
         self.assertEqual(["dir_excluded:node_modules"], flags)
+
+    def test_excluded_suffixes_drop_files_from_worktree(self) -> None:
+        _load_config_cached.cache_clear()
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            subprocess.run(["git", "init", "--quiet"], cwd=root, check=True)
+            assets = root / "assets"
+            assets.mkdir()
+            (assets / "logo.png").write_bytes(b"\x89PNG not really")
+            (assets / "main.py").write_text("print(1)\n", "utf-8")
+
+            store = self._store(root)
+            files, flags = store._worktree_files()
+        self.assertIn("assets/main.py", files)
+        self.assertNotIn("assets/logo.png", files)
+        self.assertIn("suffix_file_excluded:assets/logo.png", flags)
+
+    def test_server_filters_merge_between_builtin_and_project(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self._write_project_config(
+                root,
+                "filters:\n  excluded_dirs: ['!vendor', 'generated']\n",
+            )
+            config = load_config(
+                root,
+                server_filters={
+                    "max_file_bytes": 2048,
+                    "excluded_dirs": ["servergen"],
+                    "excluded_suffixes": [".dat"],
+                },
+            )
+        self.assertEqual(2048, config.max_file_bytes)
+        # excluded_dirs: builtin + server + project additions, minus removals
+        self.assertIn("servergen", config.excluded_dirs)
+        self.assertIn("generated", config.excluded_dirs)
+        self.assertIn("node_modules", config.excluded_dirs)
+        self.assertNotIn("vendor", config.excluded_dirs)
+        # non-dir keys carried by the server replace builtin wholesale
+        self.assertEqual(frozenset({".dat"}), config.excluded_suffixes)
+
+    def test_server_legacy_suffix_keys_are_merged(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            config = load_config(
+                Path(temp),
+                server_filters={
+                    "max_file_bytes": 2048,
+                    "diff_excluded_suffixes": [".rst"],
+                    "snapshot_excluded_suffixes": [".dat"],
+                },
+            )
+        self.assertEqual(frozenset({".rst", ".dat"}), config.excluded_suffixes)
+
+    def test_project_legacy_suffix_keys_are_merged(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self._write_project_config(
+                root,
+                "filters:\n  diff_excluded_suffixes: ['.rst']\n  snapshot_excluded_suffixes: ['.dat']\n",
+            )
+            config = telemetry_config(root)
+        self.assertEqual(frozenset({".rst", ".dat"}), config.excluded_suffixes)
+
+    def test_server_filters_missing_keys_keep_builtin_defaults(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            config = load_config(Path(temp), server_filters={"max_file_bytes": 4096})
+        self.assertIn(".png", config.excluded_suffixes)
+        self.assertIn(".md", config.excluded_suffixes)
+        self.assertIn("node_modules", config.excluded_dirs)
+
+    def test_server_filter_pull_failure_falls_back_to_builtin(self) -> None:
+        _load_config_cached.cache_clear()
+        with (
+            tempfile.TemporaryDirectory() as temp,
+            patch.dict(os.environ, {"AAW_TELEMETRY_ENDPOINT": "http://127.0.0.1:1"}),
+            patch("cli.telemetry_config._fetch_server_config", side_effect=OSError("down")),
+        ):
+            config = telemetry_config(Path(temp))
+        self.assertIn("node_modules", config.excluded_dirs)
+        self.assertIn(".png", config.excluded_suffixes)
+
+    def test_server_filter_pull_uses_disk_cache_when_server_down(self) -> None:
+        _load_config_cached.cache_clear()
+        with tempfile.TemporaryDirectory() as temp:
+            cache_dir = Path(temp) / ".aaw" / "telemetry"
+            cache_dir.mkdir(parents=True)
+            endpoint = "http://cache-test.invalid"
+            cache_name = f"server-config-{abs(hash(endpoint)) & 0xFFFFFF:x}.json"
+            (cache_dir / cache_name).write_text(
+                json.dumps({"fetched_at": time.time(), "filters": {"max_file_bytes": 12345}}),
+                encoding="utf-8",
+            )
+            with (
+                patch.dict(os.environ, {"AAW_TELEMETRY_ENDPOINT": endpoint}),
+                patch("cli.telemetry_config._fetch_server_config", side_effect=OSError("down")),
+                patch("cli.telemetry_config.Path.home", return_value=Path(temp)),
+            ):
+                config = telemetry_config(Path(temp))
+        self.assertEqual(12345, config.max_file_bytes)
+        self.assertIn("node_modules", config.excluded_dirs)
+
+    def test_server_filters_bad_payload_falls_back_to_builtin(self) -> None:
+        _load_config_cached.cache_clear()
+        with (
+            tempfile.TemporaryDirectory() as temp,
+            patch("cli.telemetry_config._server_filters_cached", return_value=None),
+        ):
+            config = telemetry_config(Path(temp))
+        self.assertIn(".png", config.excluded_suffixes)
 
 
 if __name__ == "__main__":

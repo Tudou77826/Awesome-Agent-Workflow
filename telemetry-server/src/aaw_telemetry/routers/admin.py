@@ -7,7 +7,7 @@ from datetime import date
 from pathlib import Path
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import Response
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import func, select
@@ -28,6 +28,8 @@ from ..services.log_viewer import LOG_FILES, MAX_LINES, describe_files, read_tai
 from ..services.owner_overview import OwnerOverviewService
 from ..services.people import PeopleService
 from ..services.registry import RegistryService
+from ..services.admin_auth import AdminAuth
+from ..services.telemetry_filters import TelemetryFilterService
 from ..services.version_ops import VersionOpsService
 from ..services.workflow_admin import WorkflowAdminService
 
@@ -130,6 +132,15 @@ class BulkRequest(BaseModel):
     pending_attribution: bool = False
 
 
+class TelemetryFilterPayload(BaseModel):
+    filters: dict
+
+
+class TelemetryFilterPreviewPayload(BaseModel):
+    filters: dict
+    paths: list[str]
+
+
 def build_admin_router(
     session_dependency,
     settings: Settings,
@@ -140,6 +151,7 @@ def build_admin_router(
     prefix: str = "/api/v1/admin",
 ) -> APIRouter:
     router = APIRouter(prefix=prefix, tags=["admin"])
+    auth = AdminAuth(settings)
 
     # ------------------------------------------------------------------
     # Overview
@@ -677,6 +689,38 @@ def build_admin_router(
         component_id: str, repo_key: str, session: Session = Depends(session_dependency)
     ):
         return RegistryService(session, projects).delete_repo(component_id, repo_key)
+
+    # ------------------------------------------------------------------
+    # Telemetry filter config
+
+    @router.get("/telemetry-config", summary="当前上报过滤配置")
+    def telemetry_config_current(session: Session = Depends(session_dependency)):
+        return TelemetryFilterService(session).get_current()
+
+    @router.get("/telemetry-config/history", summary="上报过滤配置历史版本")
+    def telemetry_config_history(
+        limit: Annotated[int, Query(ge=1, le=200)] = 50,
+        session: Session = Depends(session_dependency),
+    ):
+        return TelemetryFilterService(session).history(limit)
+
+    @router.put("/telemetry-config", summary="保存上报过滤配置（新版本）")
+    def telemetry_config_save(
+        payload: TelemetryFilterPayload,
+        request: Request,
+        session: Session = Depends(session_dependency),
+    ):
+        context = auth.require(request, csrf=True)
+        return TelemetryFilterService(session).save(payload.filters, context.actor)
+
+    @router.post("/telemetry-config/test", summary="试算一组路径的过滤结果")
+    def telemetry_config_preview(
+        payload: TelemetryFilterPreviewPayload,
+        request: Request,
+        session: Session = Depends(session_dependency),
+    ):
+        auth.require(request)
+        return TelemetryFilterService(session).preview(payload.filters, payload.paths)
 
     # ------------------------------------------------------------------
     # Logs

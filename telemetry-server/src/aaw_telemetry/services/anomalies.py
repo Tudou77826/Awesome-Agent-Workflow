@@ -36,6 +36,27 @@ from ..models import (
 SEMVER = re.compile(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$")
 ISSUE_ASSIGNEES = {"张轶勃", "徐哲威", "宋东方", "张立肖", "孙杨宇鑫"}
 
+# 内置检测规则的历史展示名：文案升级后，名字仍停在这些旧文案上的已种规则
+# 会在启动补齐时自动换新名；管理员自定义名不受影响。
+_LEGACY_RULE_NAMES: dict[str, set[str]] = {
+    "unassigned_data": {"数据无法归属"},
+    "patch_missing": {"补丁缺失"},
+    "attribution_stuck": {"归因任务卡住"},
+}
+
+# 已下架的内置检测类型：启动补齐时把对应规则标记为删除并收尾其事件。
+# 信息不丢失的两条（人工门禁超时、版本发生回退）分别并入工作流停滞和
+# 旧版本持续活跃的 evidence；其余三条（核心统计突变、状态前后不一致、
+# 归因结果质量异常）按设计评审结论直接移除。
+_RETIRED_DETECTORS: dict[str, str] = {
+    "core_stats_shift": "低量平台持续误报，用量变化不构成异常",
+    "workflow_inconsistent": "平台自身数据一致性自检，转服务端日志",
+    "manual_gate_timeout": "并入「工作流停滞」，事件里标注在等人工确认",
+    "attribution_quality": "被忽略清单与其他归因规则架空，无独立场景",
+    "version_rollback": "并入「旧版本持续活跃」，事件里标注回退来源",
+}
+
+
 
 @dataclass(frozen=True)
 class DetectorSpec:
@@ -62,30 +83,23 @@ DETECTOR_SPECS: dict[str, DetectorSpec] = {
             sentence="近 {active_window_days} 内活跃过的仓库，已连续 {max_idle_hours} 没有任何上报",
         ),
         DetectorSpec(
-            "core_stats_shift",
-            "component",
-            "核心统计突变",
-            "最近上报量明显偏离自身历史基线",
-            {"baseline_days": 28, "deviation_ratio": 0.5, "min_sample": 10},
-            sentence=(
-                "最近每日上报量偏离过去 {baseline_days} 的基线达 {deviation_ratio}，"
-                "且历史样本不少于 {min_sample}"
-            ),
-        ),
-        DetectorSpec(
             "unassigned_data",
             "component",
-            "数据无法归属",
-            "上报仓库不能匹配组件登记关系",
-            {"window_hours": 24, "min_count": 3},
-        ),
-        DetectorSpec(
-            "unassigned_data",
-            "component",
-            "数据无法归属",
+            "上报了未登记的仓库",
             "上报仓库不能匹配组件登记关系",
             {"window_hours": 24, "min_count": 3},
             sentence="近 {window_hours} 内同一仓库累计有 {min_count} 上报无法匹配到已登记组件",
+        ),
+        DetectorSpec(
+            "adoption_drop",
+            "component",
+            "采纳率大幅下降",
+            "近期产出的采纳率明显低于自身历史水平",
+            {"recent_days": 7, "baseline_days": 28, "drop_pp": 25, "min_runs": 3, "min_lines": 60},
+            sentence=(
+                "近 {recent_days} 产出的采纳率（80% 口径）比之前 {baseline_days} 下降超过 "
+                "{drop_pp}，且两侧各有至少 {min_runs} 产出、{min_lines} 行有效代码"
+            ),
         ),
         DetectorSpec(
             "workflow_stalled",
@@ -104,39 +118,20 @@ DETECTOR_SPECS: dict[str, DetectorSpec] = {
             sentence="步骤进入 {statuses} 状态后 {grace_minutes} 仍未恢复",
         ),
         DetectorSpec(
-            "workflow_inconsistent",
-            "workflow",
-            "状态前后不一致",
-            "工作流、步骤与完成时间相互矛盾",
-            {"grace_minutes": 10},
-            sentence="工作流、步骤与完成时间相互矛盾的状态持续超过 {grace_minutes}",
-        ),
-        DetectorSpec(
-            "manual_gate_timeout",
-            "workflow",
-            "人工门禁超时",
-            "人工确认步骤等待时间过长",
-            {"max_wait_hours": 24, "step_types": ["user-confirm"]},
-            sentence="{step_types} 类人工确认步骤等待超过 {max_wait_hours}",
-        ),
-        DetectorSpec(
             "patch_missing",
             "attribution",
-            "补丁缺失",
-            "开发产出结束后没有收到可归因补丁",
+            "diff 缺失",
+            "开发产出结束后没有收到可归因的 diff",
             {"wait_hours": 24},
-            sentence="开发产出结束后 {wait_hours} 内仍未收到可归因补丁",
+            sentence="开发产出结束后 {wait_hours} 内仍未收到可归因的 diff",
         ),
         DetectorSpec(
             "attribution_stuck",
             "attribution",
-            "归因任务卡住",
-            "归因任务在中间状态停留过久",
-            {"pending_hours": 2, "running_minutes": 30, "retry_hours": 1},
-            sentence=(
-                "归因任务排队超过 {pending_hours}、执行超过 {running_minutes}，"
-                "或等待重试超过 {retry_hours}"
-            ),
+            "归因重试迟迟不成功",
+            "归因任务停留在等待重试状态过久",
+            {"retry_hours": 1},
+            sentence="归因任务在等待重试状态停留超过 {retry_hours}，反复重试仍无法归因",
         ),
         DetectorSpec(
             "attribution_failed",
@@ -145,21 +140,6 @@ DETECTOR_SPECS: dict[str, DetectorSpec] = {
             "归因任务重试后仍然失败",
             {"min_retry_count": 3},
             sentence="归因任务失败重试达到 {min_retry_count} 仍未成功",
-        ),
-        DetectorSpec(
-            "attribution_quality",
-            "attribution",
-            "归因结果质量异常",
-            "归因结果包含需要人工检查的质量标记",
-            {
-                "ignored_flags": [
-                    "mock_attribution",
-                    "external_service",
-                    "admin_retry",
-                    "admin_retry_expired",
-                ]
-            },
-            sentence="归因结果带有除 {ignored_flags} 之外的质量标记",
         ),
         DetectorSpec(
             "old_version_active",
@@ -176,14 +156,6 @@ DETECTOR_SPECS: dict[str, DetectorSpec] = {
             "正式使用者持续上报未登记版本",
             {"window_hours": 24, "allowlist": []},
             sentence="持续 {window_hours} 上报非发布版本，且不在允许清单（{allowlist}）内",
-        ),
-        DetectorSpec(
-            "version_rollback",
-            "version",
-            "版本发生回退",
-            "人员从较新正式版本持续回退到旧版本",
-            {"window_hours": 24, "confirm_count": 2},
-            sentence="观察 {window_hours} 内出现 {confirm_count} 从新版本回退到旧版本",
         ),
     )
 }
@@ -340,46 +312,6 @@ class EvidenceProvider:
                 )
         return hits
 
-    def _detect_core_stats_shift(self, params: dict, now: datetime) -> list[DetectorHit]:
-        days = int(params["baseline_days"])
-        start = now - timedelta(days=days + 1)
-        rows = self.session.execute(
-            select(TelemetryMessage.repository, TelemetryMessage.client_updated_at).where(
-                TelemetryMessage.client_updated_at >= start
-            )
-        ).all()
-        by_repo: dict[str, list[datetime]] = {}
-        for repo, at in rows:
-            by_repo.setdefault(repo, []).append(_aware(at))
-        hits = []
-        for repo, values in by_repo.items():
-            recent = sum(at >= now - timedelta(days=1) for at in values)
-            baseline_total = sum(at < now - timedelta(days=1) for at in values)
-            if baseline_total < int(params["min_sample"]):
-                continue
-            baseline = baseline_total / days
-            deviation = abs(recent - baseline) / max(baseline, 1)
-            if deviation >= float(params["deviation_ratio"]):
-                hits.append(
-                    DetectorHit(
-                        "repository",
-                        repo,
-                        f"{repo} 上报量突变",
-                        f"最近 24 小时 {recent} 条，历史日均 {baseline:.1f} 条",
-                        repo,
-                        self._component(repo),
-                        actual_value=str(recent),
-                        threshold_value=f"偏离 ≥ {float(params['deviation_ratio']):.0%}",
-                        evidence={
-                            "recent_count": recent,
-                            "baseline_daily": round(baseline, 2),
-                            "baseline_days": days,
-                        },
-                        detail_target={"tab": "components", "repository": repo},
-                    )
-                )
-        return hits
-
     def _detect_unassigned_data(self, params: dict, now: datetime) -> list[DetectorHit]:
         cutoff = now - timedelta(hours=float(params["window_hours"]))
         rows = self.session.execute(
@@ -414,16 +346,53 @@ class EvidenceProvider:
                 WorkflowRun.last_activity_at < cutoff,
             )
         ).all()
-        return [
-            self._workflow_hit(
-                row,
-                "工作流停滞",
-                "已 "
-                f"{int((now - _aware(row.last_activity_at)).total_seconds() // 3600)} "
-                "小时没有活动",
-                f"> {params['max_idle_hours']} 小时",
+        hits = []
+        for row in rows:
+            # 人工门禁超时已并入本规则：等确认是最常见、也最可解释的停滞形态，
+            # 命中时在摘要和证据里标注"在等谁确认"，而不是再开一条事件。
+            waiting = self.session.execute(
+                select(StepExecution.step_name)
+                .where(
+                    StepExecution.workflow_run_id == row.id,
+                    StepExecution.step_type == "user-confirm",
+                    StepExecution.status.in_(["ready", "running"]),
+                )
+                .limit(1)
+            ).scalar()
+            summary = (
+                f"人工确认「{waiting}」已等待超过 {params['max_idle_hours']} 小时"
+                if waiting
+                else (
+                    "已 "
+                    f"{int((now - _aware(row.last_activity_at)).total_seconds() // 3600)} "
+                    "小时没有活动"
+                )
             )
-            for row in rows
+            hits.append(
+                self._workflow_hit(row, "工作流停滞", summary, f"> {params['max_idle_hours']} 小时")
+            )
+        return hits
+
+    def _detect_workflow_failed(self, params: dict, now: datetime) -> list[DetectorHit]:
+        cutoff = now - timedelta(minutes=float(params["grace_minutes"]))
+        rows = self.session.execute(
+            select(StepExecution, WorkflowRun)
+            .join(WorkflowRun)
+            .where(
+                StepExecution.status.in_(params["statuses"]),
+                StepExecution.client_updated_at < cutoff,
+                WorkflowRun.deleted.is_(False),
+            )
+        ).all()
+        return [
+            self._step_hit(
+                step,
+                workflow,
+                "步骤执行失败",
+                f"步骤“{step.step_name}”处于 {step.status} 状态",
+                f"> {params['grace_minutes']} 分钟",
+            )
+            for step, workflow in rows
         ]
 
     def _detect_workflow_failed(self, params: dict, now: datetime) -> list[DetectorHit]:
@@ -448,52 +417,6 @@ class EvidenceProvider:
             for step, workflow in rows
         ]
 
-    def _detect_workflow_inconsistent(self, params: dict, now: datetime) -> list[DetectorHit]:
-        cutoff = now - timedelta(minutes=float(params["grace_minutes"]))
-        rows = self.session.scalars(
-            select(WorkflowRun).where(
-                WorkflowRun.deleted.is_(False), WorkflowRun.server_updated_at < cutoff
-            )
-        ).all()
-        hits = []
-        for row in rows:
-            inconsistent = (row.status == "completed" and row.completed_at is None) or (
-                row.status == "in_progress" and row.completed_at is not None
-            )
-            if inconsistent:
-                hits.append(
-                    self._workflow_hit(
-                        row,
-                        "工作流状态不一致",
-                        f"状态为 {row.status}，完成时间为 {_iso(row.completed_at) or '空'}",
-                        "状态与完成时间一致",
-                    )
-                )
-        return hits
-
-    def _detect_manual_gate_timeout(self, params: dict, now: datetime) -> list[DetectorHit]:
-        cutoff = now - timedelta(hours=float(params["max_wait_hours"]))
-        rows = self.session.execute(
-            select(StepExecution, WorkflowRun)
-            .join(WorkflowRun)
-            .where(
-                StepExecution.step_type.in_(params["step_types"]),
-                StepExecution.status.in_(["ready", "running"]),
-                StepExecution.client_updated_at < cutoff,
-                WorkflowRun.deleted.is_(False),
-            )
-        ).all()
-        return [
-            self._step_hit(
-                step,
-                workflow,
-                "人工门禁超时",
-                f"人工确认已等待超过 {params['max_wait_hours']} 小时",
-                f"> {params['max_wait_hours']} 小时",
-            )
-            for step, workflow in rows
-        ]
-
     def _detect_patch_missing(self, params: dict, now: datetime) -> list[DetectorHit]:
         cutoff = now - timedelta(hours=float(params["wait_hours"]))
         rows = self.session.execute(
@@ -511,42 +434,40 @@ class EvidenceProvider:
             self._dev_hit(
                 dev,
                 workflow,
-                "开发产出补丁缺失",
-                "产出完成后仍未收到可归因补丁",
+                "开发产出 diff 缺失",
+                "产出完成后仍未收到可归因的 diff",
                 f"> {params['wait_hours']} 小时",
             )
             for dev, workflow in rows
         ]
 
     def _detect_attribution_stuck(self, params: dict, now: datetime) -> list[DetectorHit]:
+        # 只盯 retry_pending：排队慢、执行慢是调度器健康问题，AI Master 无从处理；
+        # 反复重试不上来才是用户侧可介入的信号（重跑或申请屏蔽产出）。
+        limit = timedelta(hours=float(params["retry_hours"]))
         rows = self.session.execute(
             select(CodeAttribution, DevRun, WorkflowRun)
             .select_from(CodeAttribution)
             .join(DevRun, DevRun.id == CodeAttribution.dev_run_id)
             .join(WorkflowRun, WorkflowRun.id == DevRun.workflow_run_id)
             .where(
-                CodeAttribution.attribution_status.in_(["pending", "running", "retry_pending"]),
+                CodeAttribution.attribution_status == "retry_pending",
                 CodeAttribution.deleted.is_(False),
                 DevRun.admin_excluded.is_(False),
                 WorkflowRun.deleted.is_(False),
             )
         ).all()
-        limits = {
-            "pending": timedelta(hours=float(params["pending_hours"])),
-            "running": timedelta(minutes=float(params["running_minutes"])),
-            "retry_pending": timedelta(hours=float(params["retry_hours"])),
-        }
         return [
             self._attribution_hit(
                 attr,
                 dev,
                 workflow,
-                "归因任务卡住",
-                f"任务在 {attr.attribution_status} 状态停留过久",
-                f"> {int(limits[attr.attribution_status].total_seconds() // 60)} 分钟",
+                "归因重试迟迟不成功",
+                f"已重试 {attr.retry_count} 次仍在等待重试，超过 {params['retry_hours']} 小时",
+                f"> {params['retry_hours']} 小时",
             )
             for attr, dev, workflow in rows
-            if now - _aware(attr.server_updated_at) > limits[attr.attribution_status]
+            if now - _aware(attr.server_updated_at) > limit
         ]
 
     def _detect_attribution_failed(self, params: dict, now: datetime) -> list[DetectorHit]:
@@ -576,35 +497,84 @@ class EvidenceProvider:
             for attr, dev, workflow in rows
         ]
 
-    def _detect_attribution_quality(self, params: dict, now: datetime) -> list[DetectorHit]:
-        del now
-        ignored = set(params["ignored_flags"])
+    def _detect_adoption_drop(self, params: dict, now: datetime) -> list[DetectorHit]:
+        recent = timedelta(days=float(params["recent_days"]))
+        baseline = timedelta(days=float(params["baseline_days"]))
+        cutoff_recent = now - recent
+        cutoff_baseline = now - (recent + baseline)
         rows = self.session.execute(
-            select(CodeAttribution, DevRun, WorkflowRun)
-            .select_from(CodeAttribution)
-            .join(DevRun, DevRun.id == CodeAttribution.dev_run_id)
+            select(DevRun, WorkflowRun, CodeAttribution)
+            .select_from(DevRun)
             .join(WorkflowRun, WorkflowRun.id == DevRun.workflow_run_id)
+            .outerjoin(CodeAttribution, CodeAttribution.dev_run_id == DevRun.id)
             .where(
-                CodeAttribution.attribution_status.in_(["finalized_match", "finalized_no_match"]),
-                CodeAttribution.deleted.is_(False),
+                DevRun.completed_at.is_not(None),
+                DevRun.completed_at >= cutoff_baseline,
                 DevRun.admin_excluded.is_(False),
                 WorkflowRun.deleted.is_(False),
             )
         ).all()
-        hits = []
-        for attr, dev, workflow in rows:
-            flags = [flag for flag in (attr.quality_flags or []) if flag not in ignored]
-            if flags:
-                hits.append(
-                    self._attribution_hit(
-                        attr,
-                        dev,
-                        workflow,
-                        "归因结果质量异常",
-                        f"质量标记：{', '.join(flags)}",
-                        "无质量标记",
-                    )
+        # 近期/基线两侧按仓库聚合；归因未出终态结果的产出两侧都不计——
+        # "还没归因完"由 diff 缺失、归因重试、归因失败三条规则负责。
+        buckets: dict[str, dict[str, dict[str, int]]] = {}
+        for dev, workflow, attr in rows:
+            repo = workflow.project_key
+            if attr is None or attr.deleted or attr.attribution_status not in (
+                "finalized_match", "finalized_no_match"
+            ):
+                continue
+            completed = _aware(dev.completed_at)
+            side = "recent" if completed >= cutoff_recent else "baseline"
+            slot = buckets.setdefault(workflow.project_key, {"recent": {}, "baseline": {}})[side]
+            slot["runs"] = slot.get("runs", 0) + 1
+            if dev.code_statistics:
+                slot["lines"] = slot.get("lines", 0) + int(
+                    dev.code_statistics.get("total_effective_lines", 0)
                 )
+            slot["adopted"] = slot.get("adopted", 0) + (attr.attributed_lines_80 or 0)
+            del repo
+        min_runs = int(params["min_runs"])
+        min_lines = int(params["min_lines"])
+        drop_pp = float(params["drop_pp"])
+        hits = []
+        for repo, sides in buckets.items():
+            recent_side, base_side = sides["recent"], sides["baseline"]
+            if (
+                recent_side.get("runs", 0) < min_runs
+                or base_side.get("runs", 0) < min_runs
+                or recent_side.get("lines", 0) < min_lines
+                or base_side.get("lines", 0) < min_lines
+            ):
+                continue
+            recent_rate = recent_side["adopted"] / recent_side["lines"]
+            base_rate = base_side["adopted"] / base_side["lines"]
+            if base_rate - recent_rate < drop_pp / 100:
+                continue
+            hits.append(
+                DetectorHit(
+                    "repository",
+                    repo,
+                    f"{repo} 采纳率大幅下降",
+                    (
+                        f"近 {int(params['recent_days'])} 天采纳率（80%）"
+                        f"{recent_rate:.0%}，之前 {int(params['baseline_days'])} 天为 {base_rate:.0%}"
+                    ),
+                    repo,
+                    self._component(repo),
+                    actual_value=f"{recent_rate:.0%}",
+                    threshold_value=f"下降 ≥ {drop_pp:.0f} 个百分点",
+                    evidence={
+                        "recent_runs": recent_side["runs"],
+                        "recent_lines": recent_side["lines"],
+                        "recent_rate": round(recent_rate, 4),
+                        "baseline_runs": base_side["runs"],
+                        "baseline_lines": base_side["lines"],
+                        "baseline_rate": round(base_rate, 4),
+                        "drop_pp": round((base_rate - recent_rate) * 100, 1),
+                    },
+                    detail_target={"tab": "components", "repository": repo},
+                )
+            )
         return hits
 
     def _version_rows(self, now: datetime, window: timedelta) -> dict[str, list[TelemetryMessage]]:
@@ -634,15 +604,38 @@ class EvidenceProvider:
             if current in ladder and len(ladder) - 1 - ladder.index(current) >= int(
                 params["lag_positions"]
             ):
+                # 版本发生回退已并入本规则：回退者必然落在旧版本区间，
+                # 摘要里标注"从哪个版本退下来"，解释这条旧版本的来历。
+                rollback = self._rollback_from(rows)
+                summary = (
+                    f"从 {rollback} 回退到 {latest.aaw_version} 后持续使用"
+                    if rollback
+                    else f"当前 {latest.aaw_version}，最新 {'.'.join(map(str, ladder[-1]))}"
+                )
                 hits.append(
                     self._version_hit(
                         latest,
                         "旧版本持续活跃",
-                        f"当前 {latest.aaw_version}，最新 {'.'.join(map(str, ladder[-1]))}",
+                        summary,
                         f"落后 ≥ {params['lag_positions']} 个发布位",
                     )
                 )
         return hits
+
+    @staticmethod
+    def _rollback_from(rows: list[TelemetryMessage]) -> str | None:
+        """同一用户近期的上报里是否出现过更高的正式版本（回退来源），没有则返回 None。"""
+        parsed = [
+            (version := _semver(row.aaw_version))
+            for row in rows
+            if _semver(row.aaw_version) is not None
+        ]
+        highest = max(parsed) if parsed else None
+        return (
+            ".".join(map(str, highest))
+            if highest is not None and highest > _semver(rows[-1].aaw_version or "")
+            else None
+        )
 
     def _detect_non_release_version(self, params: dict, now: datetime) -> list[DetectorHit]:
         users = self._version_rows(now, timedelta(hours=float(params["window_hours"])))
@@ -657,27 +650,6 @@ class EvidenceProvider:
             for email, rows in users.items()
             if email not in allow and _semver(rows[-1].aaw_version) is None
         ]
-
-    def _detect_version_rollback(self, params: dict, now: datetime) -> list[DetectorHit]:
-        users = self._version_rows(now, timedelta(hours=float(params["window_hours"])))
-        hits = []
-        for rows in users.values():
-            parsed = [(row, _semver(row.aaw_version)) for row in rows]
-            parsed = [(row, version) for row, version in parsed if version is not None]
-            if len(parsed) < int(params["confirm_count"]) + 1:
-                continue
-            highest = max(version for _, version in parsed)
-            tail = parsed[-int(params["confirm_count"]) :]
-            if all(version < highest for _, version in tail):
-                hits.append(
-                    self._version_hit(
-                        tail[-1][0],
-                        "版本发生回退",
-                        f"从 {'.'.join(map(str, highest))} 回退到 {tail[-1][0].aaw_version}",
-                        f"连续 {params['confirm_count']} 次旧版本上报",
-                    )
-                )
-        return hits
 
     def _workflow_hit(
         self, row: WorkflowRun, title: str, summary: str, threshold: str
@@ -961,39 +933,69 @@ class AnomalyService:
         return {"items": [_rule_payload(rule) for rule in rules]}
 
     def ensure_builtin_rules(self, actor: str = "系统初始化") -> int:
-        """Create one editable rule for every built-in detector that is not represented."""
-        existing = set(
-            self.session.scalars(
-                select(AnomalyRule.detector_type).where(AnomalyRule.status != "deleted")
+        """Create one editable rule for every built-in detector that is not represented.
+
+        已存在的规则保持管理员改过的配置，但展示名跟随内置文案：
+        名字还停在历史内置文案上的规则，升级后自动换新名。
+        下架的内置检测类型：对应规则标记删除并按"规则删除"收尾事件，留审计。
+        """
+        rules = {
+            row.detector_type: row
+            for row in self.session.scalars(
+                select(AnomalyRule).where(AnomalyRule.status != "deleted")
             ).all()
-        )
+        }
         now = _now()
         created = 0
-        for spec in DETECTOR_SPECS.values():
-            if spec.code in existing:
+        renamed = 0
+        retired = 0
+        for code, reason in _RETIRED_DETECTORS.items():
+            rule = rules.get(code)
+            if rule is None:
                 continue
-            rule = AnomalyRule(
-                id=uuid.uuid4(),
-                name=spec.name,
-                category=spec.category,
-                detector_type=spec.code,
-                scope_type="platform",
-                scope_value=None,
-                params=dict(spec.defaults),
-                allow_archive=True,
-                status="disabled",
-                version=1,
-                change_reason="系统预置检测规则",
-                created_by=actor,
-                updated_by=actor,
-                created_at=now,
-                updated_at=now,
-            )
-            self.session.add(rule)
-            self.session.flush()
-            self._audit(rule, "created", actor, None, _rule_payload(rule), rule.change_reason)
-            created += 1
-        if created:
+            before = _rule_payload(rule)
+            rule.status = "deleted"
+            rule.version += 1
+            rule.change_reason = reason
+            rule.updated_by = actor
+            rule.updated_at = now
+            self._close_rule_events(rule.id, "rule_deleted", actor)
+            self._audit(rule, "deleted", actor, before, _rule_payload(rule), reason)
+            retired += 1
+        for spec in DETECTOR_SPECS.values():
+            rule = rules.get(spec.code)
+            if rule is None:
+                rule = AnomalyRule(
+                    id=uuid.uuid4(),
+                    name=spec.name,
+                    category=spec.category,
+                    detector_type=spec.code,
+                    scope_type="platform",
+                    scope_value=None,
+                    params=dict(spec.defaults),
+                    allow_archive=True,
+                    status="disabled",
+                    version=1,
+                    change_reason="系统预置检测规则",
+                    created_by=actor,
+                    updated_by=actor,
+                    created_at=now,
+                    updated_at=now,
+                )
+                self.session.add(rule)
+                self.session.flush()
+                self._audit(rule, "created", actor, None, _rule_payload(rule), rule.change_reason)
+                created += 1
+            elif rule.name != spec.name:
+                # 名字还停在历史内置文案（含本轮之前改过的内置文案）上时跟随升级；
+                # 管理员自定义名与任何内置文案都对不上，保持不动。
+                previous_names = {s.name for s in DETECTOR_SPECS.values()}
+                previous_names.update(_LEGACY_RULE_NAMES.get(spec.code, set()))
+                if rule.name in previous_names:
+                    rule.name = spec.name
+                    rule.updated_at = now
+                    renamed += 1
+        if created or renamed or retired:
             self.session.commit()
         return created
 
@@ -1243,6 +1245,7 @@ class AnomalyService:
         request = AnomalyArchiveRequest(
             id=uuid.uuid4(),
             event_id=event.id,
+            source="event",
             target_type=target_type,
             target_id=target_id,
             reason=reason,
@@ -1262,6 +1265,51 @@ class AnomalyService:
         self.session.commit()
         return self._archive_payload(request)
 
+    def request_archive_for_target(
+        self,
+        target_type: str,
+        target_id: uuid.UUID,
+        *,
+        reason: str,
+        requested_by: str,
+    ) -> dict[str, Any]:
+        """业务页（工作流/归因）直接对数据对象发起屏蔽申请，无异常事件。
+
+        target_type ∈ workflow / dev_run / attribution；与事件发起的申请
+        走同一张屏蔽审核清单和同一条审核通道。
+        """
+        if target_type not in ("workflow", "dev_run", "attribution"):
+            raise ApiError(400, "ARCHIVE_NOT_SUPPORTED", "该对象不支持申请屏蔽")
+        reason = reason.strip()
+        if not reason:
+            raise ApiError(400, "ARCHIVE_REASON_REQUIRED", "屏蔽理由不能为空")
+        target_key = str(target_id)
+        existing = self.session.scalar(
+            select(AnomalyArchiveRequest).where(
+                AnomalyArchiveRequest.target_type == target_type,
+                AnomalyArchiveRequest.target_id == target_key,
+                AnomalyArchiveRequest.status == "pending",
+            )
+        )
+        if existing is not None:
+            raise ApiError(409, "ARCHIVE_REQUEST_EXISTS", "该数据已有待审核的屏蔽申请")
+        now = _now()
+        request = AnomalyArchiveRequest(
+            id=uuid.uuid4(),
+            event_id=None,
+            source="admin_console",
+            target_type=target_type,
+            target_id=target_key,
+            reason=reason,
+            impact_preview=self.archive.preview(target_type, target_key),
+            status="pending",
+            requested_by=requested_by.strip() or "运营管理员",
+            created_at=now,
+        )
+        self.session.add(request)
+        self.session.commit()
+        return self._archive_payload(request)
+
     def review_archive(
         self, request_id: uuid.UUID, *, approved: bool, note: str, actor: str
     ) -> dict[str, Any]:
@@ -1270,7 +1318,6 @@ class AnomalyService:
             raise ApiError(404, "ARCHIVE_REQUEST_NOT_FOUND", "归档申请不存在")
         if request.status != "pending":
             raise ApiError(409, "ARCHIVE_REQUEST_FINISHED", "归档申请已经处理")
-        event = self._event(request.event_id)
         now = _now()
         request.reviewed_by = actor
         request.reviewed_at = now
@@ -1278,20 +1325,24 @@ class AnomalyService:
         if approved:
             self.archive.archive(request.target_type, request.target_id, request.reason, actor, now)
             request.status = "approved"
-            event.disposition = "archived"
-            event.detection_status = "recovered"
-            event.closed_reason = "data_archived"
-            event.active_key = None
-            event.recovered_at = now
             action = "archive_approved"
         else:
             if not note.strip():
                 raise ApiError(400, "REVIEW_NOTE_REQUIRED", "拒绝归档时必须填写理由")
             request.status = "rejected"
-            event.disposition = "open"
             action = "archive_rejected"
-        event.updated_at = now
-        self.session.add(self._action(event, action, actor, {"note": note.strip()}))
+        event = self.session.get(AnomalyEvent, request.event_id) if request.event_id else None
+        if event is not None:
+            if approved:
+                event.disposition = "archived"
+                event.detection_status = "recovered"
+                event.closed_reason = "data_archived"
+                event.active_key = None
+                event.recovered_at = now
+            else:
+                event.disposition = "open"
+            event.updated_at = now
+            self.session.add(self._action(event, action, actor, {"note": note.strip()}))
         self.session.commit()
         return self._archive_payload(request)
 
@@ -1617,7 +1668,8 @@ class AnomalyService:
     def _archive_payload(request: AnomalyArchiveRequest) -> dict[str, Any]:
         return {
             "id": str(request.id),
-            "event_id": str(request.event_id),
+            "event_id": str(request.event_id) if request.event_id else None,
+            "source": request.source,
             "target_type": request.target_type,
             "target_id": request.target_id,
             "reason": request.reason,

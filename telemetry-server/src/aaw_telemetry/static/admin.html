@@ -156,8 +156,8 @@
       content: ""; position: absolute; inset: -40% -20% auto; height: 120%;
       background: var(--halo, transparent); pointer-events: none;
     }
-    /* 标签必须单行：卡片被 5 等分后「退避重试」会折成「退避重/试」。中文走 body 栈（1em/字），
-       左右内边距 12px 保证放得下；窗口挤到极限时截断，不折行、不溢出到邻卡。 */
+    /* 标签必须单行：中文走 body 栈（1em/字），左右内边距 12px 保证放得下；
+       窗口挤到极限时截断，不折行、不溢出到邻卡。 */
     .stone small {
       display: block; font-family: var(--body); font-size: 12.5px; font-weight: 600;
       color: var(--ink-mute); letter-spacing: 0; white-space: nowrap; overflow: hidden;
@@ -262,6 +262,30 @@
     .fail-groups .chip { cursor: pointer; padding: 4px 10px; font-size: 12px; }
     .fail-groups .chip:hover { background: rgba(255,61,139,.12); color: #BE1356; }
     .fail-groups:empty { display: none; }
+    /* 上报过滤编辑页：每类规则一个分组卡，列表用标签编辑器逐条增删 */
+    .tf-card-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+    .tf-card-head h2 { margin: 0; }
+    .tf-group { border: 1.5px solid var(--edge); border-radius: 12px; padding: 12px 14px 14px; margin-top: 12px; background: var(--paper); }
+    .tf-group__head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+    .tf-group__head strong { font: 700 14px var(--disp); color: var(--ink); }
+    .tf-hint { margin: 4px 0 10px; font-size: 12.5px; color: var(--ink-mute); }
+    .tf-hint code { font-family: var(--mono); background: var(--paper-2); padding: 1px 5px; border-radius: 5px; }
+    .tf-chipbox { display: flex; flex-wrap: wrap; gap: 6px; }
+    .tf-chipbox:empty::after { content: "（空）"; font: 600 12.5px var(--body); color: var(--ink-mute); }
+    .tf-chip { display: inline-flex; align-items: center; gap: 4px; padding: 3px 6px 3px 10px; border-radius: 8px; background: rgba(75,63,228,.08); border: 1px solid transparent; }
+    .tf-chip code { font: 600 12.5px var(--mono); color: var(--iris); word-break: break-all; }
+    .tf-chip button { border: 0; background: none; color: var(--ink-mute); font: 700 15px var(--body); cursor: pointer; padding: 0 5px; border-radius: 6px; line-height: 1.1; }
+    .tf-chip button:hover { color: var(--magenta); background: rgba(255,61,139,.1); }
+    .tf-chip--bad { background: rgba(255,61,139,.1); border-color: rgba(255,61,139,.35); }
+    .tf-chip--bad code { color: #BE1356; }
+    .tf-chip--neg { background: rgba(148,152,163,.14); }
+    .tf-chip--neg code { color: var(--ink-soft); }
+    .tf-chip-add { display: flex; gap: 8px; margin-top: 10px; }
+    .tf-chip-add input { flex: 1; padding: 7px 10px; border: 1.5px dashed var(--edge-2); border-radius: 9px; background: var(--paper-2); color: var(--ink); font: 500 13px var(--mono); }
+    .tf-chip-add input:focus { outline: none; border-color: var(--iris); border-style: solid; }
+    .tf-size { display: flex; align-items: center; gap: 12px; }
+    .tf-size input { width: 170px; }
+    .tf-size span { font: 600 13px var(--body); color: var(--ink-mute); white-space: nowrap; }
     /* 体检状态带：调度器关键数字一行排开，失败 chips 跟在后面，扫描按钮收尾 */
     .health-band { align-items: center; gap: 18px; }
     .health-band > span#healthSchedulerKv { display: inline-flex; align-items: center; gap: 18px; flex-wrap: wrap; }
@@ -325,6 +349,13 @@
     .an-mode { display: inline-flex; gap: 4px; padding: 4px; margin-bottom: 16px; background: rgba(75,63,228,.06); border: 1px solid var(--edge); border-radius: 12px; }
     .an-mode .btn { border: 0; background: transparent; }
     .an-mode .btn.is-active { color: #fff; background: var(--iris); box-shadow: var(--sh-iris); }
+    /* 屏蔽审核待处理角标：红底白字圆形，挂在按钮文字右侧 */
+    .an-review-badge {
+      display: inline-grid; place-items: center; min-width: 18px; height: 18px;
+      margin-left: 6px; padding: 0 5px; border-radius: 999px;
+      font: 700 11.5px/1 var(--body); color: #fff; background: #E5484D;
+    }
+    .an-review-badge[hidden] { display: none; }
     .an-view[hidden] { display: none; }
     .an-summary { display: grid; grid-template-columns: 1.2fr repeat(4,1fr); gap: 12px; margin-bottom: 18px; }
     .an-summary .stone:first-child { color: #fff; background: #20212A; border-color: #20212A; }
@@ -494,7 +525,7 @@
     @media (max-width: 900px) { .an-wide-body { grid-template-columns: 1fr; } .an-wide-aside { border-right: 0; border-bottom: 1px solid var(--edge); } }
     @media (max-width: 620px) { .an-form, .an-facts, .an-rule-params { grid-template-columns: 1fr; } .an-field.wide { grid-column: auto; } }
 
-    /* ── Patch viewer（补丁文件查看器弹窗）── */
+    /* ── Patch viewer（diff 文件查看器弹窗）── */
     .patch-mask {
       position: fixed; inset: 0; z-index: 320; display: grid; place-items: center;
       background: rgba(22, 24, 29, .45); backdrop-filter: blur(3px);
@@ -619,6 +650,7 @@
       <span class="side-nav__label">归属与配置</span>
       <button data-tab="aimaster">AI Master</button>
       <button data-tab="registry">注册表</button>
+      <button data-tab="telemetry-filters">上报过滤</button>
     </div>
     <div class="side-nav__group">
       <span class="side-nav__label">系统</span>
@@ -723,7 +755,7 @@
       <div class="page-head__title">
 
         工作流
-        <small>全量工作流明细；可按工作流 / 产出 / 用户三级删除</small>
+        <small>全量工作流明细；屏蔽需先申请、审核通过后出清统计</small>
       </div>
     </div>
     <div class="card">
@@ -742,8 +774,8 @@
         </label>
         <label>范围
           <select id="awLifecycle">
-            <option value="active">未删除</option>
-            <option value="deleted">仅已删除（归档）</option>
+            <option value="active">未屏蔽</option>
+            <option value="deleted">仅已屏蔽（归档）</option>
             <option value="all">全部</option>
           </select>
         </label>
@@ -799,7 +831,7 @@
         </table>
       </details>
       <details class="trend-more" style="margin-top:8px;">
-        <summary>算法版本构成 <span class="count">暴露新旧算法结果并存</span></summary>
+        <summary>算法版本构成 <span class="count">检查是否有新旧算法结果并存</span></summary>
         <table style="margin-top:8px;">
           <thead><tr><th>算法版本</th><th>结果</th><th>数量</th></tr></thead>
           <tbody id="algoBody"></tbody>
@@ -821,16 +853,16 @@
             <option value="">全部</option>
             <option value="pending">待处理</option>
             <option value="running">执行中</option>
-            <option value="retry_pending">退避重试</option>
+            <option value="retry_pending">等待重试</option>
             <option value="failed">失败</option>
             <option value="finalized_match">已匹配</option>
             <option value="finalized_no_match">未匹配</option>
-            <option value="not_queued">未入队</option>
+            <option value="not_queued">等 diff 上传</option>
           </select>
         </label>
         <button class="btn btn--primary" id="btnRecRefresh">查询</button>
         <button class="btn" id="btnRecReset">重置</button>
-        <span id="kindChip" class="chip chip--admin" style="display:none;cursor:pointer;padding:5px 12px;" title="点击清除该筛选">仅看未入队 ✕</span>
+        <span id="kindChip" class="chip chip--admin" style="display:none;cursor:pointer;padding:5px 12px;" title="点击清除该筛选">仅看等 diff ✕</span>
         <span id="pendingChip" class="chip chip--warn" style="display:none;cursor:pointer;padding:5px 12px;" title="点击清除该口径，回到全量记录">待归因口径 · 近 30 天无归因结果 ✕</span>
         <details class="more-filters">
           <summary>更多筛选</summary>
@@ -859,10 +891,10 @@
                 <option value="dev">dev</option>
               </select>
             </label>
-            <label>已删除
+            <label>已屏蔽
               <select id="fExcluded">
-                <option value="hidden">隐藏已删除</option>
-                <option value="only">仅看已删除</option>
+                <option value="hidden">隐藏已屏蔽</option>
+                <option value="only">仅看已屏蔽</option>
                 <option value="all">全部</option>
               </select>
             </label>
@@ -874,8 +906,8 @@
       <div class="toolbar" style="border-top:1px dashed var(--edge-2); padding-top:12px;">
         <span class="muted" style="font-size:13px;">批量（先预览后执行，单次 ≤ 200 条）：</span>
         <button class="btn" id="btnBulkRetry">批量重跑</button>
-        <button class="btn" id="btnBulkForce">批量强制重跑</button>
-        <button class="btn btn--danger" id="btnBulkExclude">批量删除产出</button>
+        <button class="btn" id="btnBulkForce">批量重跑失败</button>
+        <button class="btn btn--danger" id="btnBulkExclude">批量屏蔽产出</button>
         <button class="btn" id="btnBulkRestore">批量恢复</button>
         <span style="flex:1"></span>
         <button class="btn" id="btnRecPrev">上一页</button>
@@ -886,7 +918,7 @@
         <table>
           <thead>
             <tr>
-              <th>状态</th><th>仓库 / 需求</th><th>用户</th><th>生成 → 归因(80%)</th>
+              <th>状态</th><th>仓库 / 需求</th><th>用户</th><th title="「被采纳」= 合入代码中与生成代码一致的比例达到 80% 的行数">生成 → 被采纳</th>
               <th>调度</th><th>更新时间</th><th>标记</th><th>操作</th>
             </tr>
           </thead>
@@ -988,11 +1020,11 @@
     </div>
 
     <div class="an-summary">
-      <div class="stone"><small>存在异常</small><strong id="anSumOpen">0</strong></div>
-      <div class="stone stone--tangerine"><small>组件统计</small><strong id="anSumComponent">0</strong></div>
-      <div class="stone stone--magenta"><small>工作流</small><strong id="anSumWorkflow">0</strong></div>
-      <div class="stone stone--sky"><small>归因处理</small><strong id="anSumAttribution">0</strong></div>
-      <div class="stone stone--iris"><small>版本使用</small><strong id="anSumVersion">0</strong></div>
+      <div class="stone" title="当前范围命中的异常事件总数"><small>存在异常（合计）</small><strong id="anSumOpen">0</strong></div>
+      <div class="stone stone--tangerine" title="合计中属于组件统计类的数量"><small>其中 · 组件统计</small><strong id="anSumComponent">0</strong></div>
+      <div class="stone stone--magenta" title="合计中属于工作流类的数量"><small>其中 · 工作流</small><strong id="anSumWorkflow">0</strong></div>
+      <div class="stone stone--sky" title="合计中属于归因处理类的数量"><small>其中 · 归因处理</small><strong id="anSumAttribution">0</strong></div>
+      <div class="stone stone--iris" title="合计中属于版本使用类的数量"><small>其中 · 版本使用</small><strong id="anSumVersion">0</strong></div>
     </div>
     <div class="card">
       <div class="toolbar">
@@ -1018,29 +1050,30 @@
 
     <div class="an-mode" role="tablist" aria-label="异常管理功能">
       <button class="btn is-active" data-an-admin-view="rules">规则管理</button>
-      <button class="btn" data-an-admin-view="reviews">屏蔽审核</button>
+      <button class="btn" data-an-admin-view="reviews">屏蔽审核<span class="an-review-badge" id="anReviewBadge" hidden></span></button>
       <button class="btn" data-an-admin-view="masters">按 AI Master</button>
     </div>
 
     <div class="an-view" id="an-admin-view-rules">
       <div class="card">
         <h2>规则管理 <span class="count">检测类型由系统统一提供，管理员只需配置并启停</span></h2>
-        <div class="toolbar"><button class="btn" id="anEvaluate">立即检测</button><span class="muted" id="anRuleCount"></span></div>
+        <div class="toolbar"><label>规则 <input id="anRuleSearch" size="14" placeholder="规则名称关键词"></label><label>种类 <select id="anRuleCategory"><option value="">全部</option></select></label><button class="btn" id="anRuleReset">重置</button><button class="btn" id="anEvaluate">立即检测</button><button class="btn" id="anEnableAll">一键全部启用</button><span class="muted" id="anRuleCount"></span></div>
         <div class="table-wrap" style="overflow-x:auto;">
           <table class="an-rule-table"><thead><tr><th>检测规则</th><th>判定条件</th><th>生效范围</th><th>允许申请屏蔽</th><th>状态</th><th style="text-align:right;">操作</th></tr></thead><tbody id="anRuleList"></tbody></table>
         </div>
+        <div class="an-empty" id="anRuleEmpty" hidden><strong>没有符合筛选条件的规则</strong>换个关键词，或把异常种类切回「全部」再试。</div>
         <div class="toolbar" id="anRulePager" style="margin:12px 0 0; justify-content:flex-end;"></div>
       </div>
     </div>
 
     <div class="an-view" id="an-admin-view-reviews" hidden>
       <div class="card">
-        <h2>屏蔽审核 <span class="count">处理 AI Master 提交的屏蔽申请</span></h2>
+        <h2>屏蔽审核 <span class="count">异常事件与业务页提交的屏蔽申请都在这里处理</span></h2>
         <div class="table-wrap" style="overflow-x:auto;">
           <table><thead><tr><th>申请</th><th>屏蔽对象</th><th>理由与影响</th><th>状态</th><th>审核</th></tr></thead><tbody id="anReviewBody"></tbody></table>
         </div>
         <div class="toolbar" id="anReviewPager" style="margin:12px 0 0; justify-content:flex-end;"></div>
-        <div class="an-empty" id="anReviewEmpty" hidden><strong>暂无屏蔽申请</strong>屏蔽申请通过后，对应数据将不再纳入统计。</div>
+        <div class="an-empty" id="anReviewEmpty" hidden><strong>暂无屏蔽申请</strong>业务页与异常事件的屏蔽申请通过后，对应数据将不再纳入统计。</div>
       </div>
     </div>
 
@@ -1052,6 +1085,53 @@
         </div>
         <div class="toolbar" id="anMasterBoardPager" style="margin:12px 0 0; justify-content:flex-end;"></div>
         <div class="an-empty" id="anMasterEmpty" hidden><strong>当前没有任何异常</strong>所有 AI Master 名下都没有命中规则的异常。</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================== 上报过滤（管理员） ============================== -->
+  <section class="tab" id="tab-telemetry-filters">
+    <div class="page-head">
+      <div class="page-head__title">
+        上报过滤
+        <small>服务端统一下发 CLI 快照与 Diff 过滤规则，保存即出新版本</small>
+      </div>
+      <button class="btn" id="tfRefresh">刷新</button>
+    </div>
+
+    <div class="card" id="tfEditorCard">
+      <div class="tf-card-head">
+        <h2>当前生效规则</h2>
+        <span class="count" id="tfMeta">未保存过，CLI 使用内置默认</span>
+      </div>
+
+      <div class="tf-group">
+        <div class="tf-group__head"><strong>单文件大小上限</strong></div>
+        <p class="tf-hint">超过该大小的文件不进入快照，记 <code>large_file_excluded</code></p>
+        <div class="tf-size">
+          <input id="tfMaxFileBytes" type="number" min="1" step="1048576" autocomplete="off">
+          <span id="tfSizeLabel">—</span>
+        </div>
+      </div>
+
+      <div class="tf-group">
+        <div class="tf-group__head"><strong>目录排除</strong><span class="count">锚定仓库根；<code>!前缀</code> 表示取消排除；追加进内置清单</span></div>
+        <p class="tf-hint">命中目录的整个子树不进入快照、不进 Diff、不参与代码统计，记 <code>dir_excluded</code></p>
+        <div class="tf-chipbox" id="tfExcludedDirsBox"></div>
+        <div class="tf-chip-add"><input id="tfExcludedDirsInput" placeholder="输入目录名回车添加，如 logs/generated（!vendor 取消排除）" autocomplete="off"></div>
+      </div>
+
+      <div class="tf-group">
+        <div class="tf-group__head"><strong>排除后缀</strong><span class="count">快照阶段直接排除</span></div>
+        <p class="tf-hint">命中即不进入 D0/D1：不读取、不进 Diff、不参与统计，记 <code>suffix_file_excluded</code>；文档、日志与二进制资源都适用</p>
+        <div class="tf-chipbox" id="tfExcludedSuffixesBox"></div>
+        <div class="tf-chip-add"><input id="tfExcludedSuffixesInput" placeholder="输入后缀回车添加，如 .rst" autocomplete="off"></div>
+      </div>
+
+      <div class="toolbar" style="margin-top:16px;">
+        <button class="btn btn--primary" id="tfSave">保存为新版本</button>
+        <button class="btn" id="tfReset">放弃修改</button>
+        <span class="muted" id="tfSaveHint"></span>
       </div>
     </div>
   </section>
@@ -1118,7 +1198,7 @@
         <button class="btn btn--small" data-log-preset="adminOps">归因·管理员操作</button>
         <button class="btn btn--small" data-log-preset="registry">注册表变更</button>
         <button class="btn btn--small" data-log-preset="telemetry">遥测上报</button>
-        <button class="btn btn--small" data-log-preset="objects">上传与补丁</button>
+        <button class="btn btn--small" data-log-preset="objects">上传与 diff</button>
         <button class="btn btn--small" data-log-preset="access">HTTP 访问</button>
         <button class="btn btn--small" data-log-preset="service">服务启停</button>
       </div>
@@ -1142,7 +1222,7 @@
   </div>
 </div>
 
-<!-- 补丁文件查看器：行号 + 增删着色 + 换行切换 + 下载 -->
+<!-- diff 文件查看器：行号 + 增删着色 + 换行切换 + 下载 -->
 <div class="patch-mask" id="patchMask" hidden>
   <div class="patch-modal" role="dialog" aria-modal="true" aria-labelledby="patchFileName">
     <div class="patch-head">
@@ -1163,7 +1243,7 @@
   </div>
 </div>
 
-<!-- 删除弹窗：结构化理由必选 + 备注 + 操作人（防"删除"沦为糊弄数据的后门） -->
+<!-- 删除弹窗：结构化理由必选 + 备注 + 操作人（已删除数据的恢复操作仍在使用） -->
 <div class="modal-mask" id="deleteMask" hidden>
   <div class="modal" role="dialog" aria-modal="true" aria-labelledby="deleteTitle">
     <h2 id="deleteTitle">删除</h2>
@@ -1248,10 +1328,26 @@ const fmtShort = (iso) => {
 };
 
 const STATUS_LABELS = {
-  pending: "待处理", running: "执行中", retry_pending: "退避重试", failed: "失败",
-  finalized_match: "已匹配", finalized_no_match: "未匹配", not_queued: "未入队",
+  pending: "待处理", running: "执行中", retry_pending: "等待重试", failed: "失败",
+  finalized_match: "已匹配", finalized_no_match: "未匹配", not_queued: "等 diff 上传",
 };
 const REASON_LABELS = { unknown: "未知/超窗" };
+// 质量标记的中文映射：页面只显示翻译，原始码放悬停（title）。
+const FLAG_LABELS = {
+  admin_retry: "人工重跑",
+  admin_retry_expired: "超窗补跑",
+  attribution_pending: "归因未完成",
+  attribution_failed: "归因失败",
+  external_service: "外部引擎处理",
+  mock_attribution: "演示引擎结果",
+  remote_error: "引擎连接失败",
+  remote_timeout: "引擎连接超时",
+  worker_error: "引擎执行异常",
+  worker_timeout: "引擎执行超时",
+};
+const flagLabel = (flag) => FLAG_LABELS[flag]
+  ?? (flag.startsWith("remote_") ? "引擎连接失败"
+  : (flag.startsWith("worker_") ? "引擎执行异常" : flag));
 // 三级删除的结构化理由枚举（与后端 REASON_CODES 一致，设计说明书 §3.3）
 const REASON_CODES = {
   trial: "试验性", stalled: "停滞放弃", wrong_repo: "非目标仓库",
@@ -1343,6 +1439,7 @@ document.querySelector(".portal-nav").addEventListener("click", (event) => {
   if (button.dataset.tab === "registry") loadRegistry();
   if (button.dataset.tab === "anomalies") loadAnomalyModule();
   if (button.dataset.tab === "anomaly-admin") loadAnomalyAdminModule();
+  if (button.dataset.tab === "telemetry-filters") loadTelemetryFilters();
   if (button.dataset.tab === "logs") loadLogs();
 });
 
@@ -1498,7 +1595,7 @@ async function loadWorkflows() {
     const data = await api(`/api/v1/admin/workflows?${params}`);
     markSync(true);
     $("#wfAdminTotal").textContent =
-      `共 ${data.total} 条` + (data.deleted_total ? ` · 历史已删除 ${data.deleted_total} 条` : "");
+      `共 ${data.total} 条` + (data.deleted_total ? ` · 历史已屏蔽 ${data.deleted_total} 条` : "");
     $("#awPage").textContent = awPage;
     $("#btnAwPrev").disabled = awPage <= 1;
     $("#btnAwNext").disabled = awPage * AW_PAGE_SIZE >= data.total;
@@ -1523,13 +1620,13 @@ function attributionBadge(item) {
   if (item.attribution_matched) bits.push(`<span class="badge badge--finalized_match">已归因 ${item.attribution_matched}</span>`);
   if (item.attribution_no_match) bits.push(`<span class="badge badge--finalized_no_match">未匹配 ${item.attribution_no_match}</span>`);
   if (item.attribution_pending) bits.push(`<span class="badge badge--pending">待定 ${item.attribution_pending}</span>`);
-  return bits.join(" ") || '<span class="badge badge--not_queued">未入队</span>';
+  return bits.join(" ") || '<span class="badge badge--not_queued">等 diff 上传</span>';
 }
 
 function deletionLine(item) {
   if (!item.deleted) return "";
   const label = REASON_CODES[item.deleted_reason_code] ?? item.deleted_reason_code ?? "—";
-  return `<div style="margin-top:3px;"><span class="badge badge--excluded">已删除 · ${esc(label)}</span>
+  return `<div style="margin-top:3px;"><span class="badge badge--excluded">已屏蔽 · ${esc(label)}</span>
     <div class="muted" style="font-size:12px;margin-top:2px;">${esc(item.deleted_reason ?? "")} · ${esc(item.deleted_by ?? "—")} · ${esc(item.deleted_at ? fmtDay(item.deleted_at) : "—")}</div></div>`;
 }
 
@@ -1537,7 +1634,7 @@ function awRowHtml(item) {
   const entry = { ar: "AR", sr: "SR", dev: "DEV" }[item.entry] ?? "—";
   const action = item.deleted
     ? `<button class="btn btn--small" data-wf-restore="${esc(item.workflow_run_id)}">恢复</button>`
-    : `<button class="btn btn--small btn--danger" data-wf-delete="${esc(item.workflow_run_id)}">删除</button>`;
+    : `<button class="btn btn--small" data-wf-archive="${esc(item.workflow_run_id)}" title="向管理员申请屏蔽这条工作流，审核通过后才出清统计">申请屏蔽</button>`;
   return `
   <tr data-wf="${esc(item.workflow_run_id)}" class="${item.deleted ? "row-excluded" : ""}">
     <td><b>${esc(item.sr ?? "—")}</b><div class="muted mono" style="font-size:12px;">${esc(item.ar ?? "")} ${esc(item.workflow_run_id)}</div></td>
@@ -1579,22 +1676,20 @@ async function expandWf(wfId, row, toggle = true) {
         const a = dev.attribution;
         devCell = `
           <div><span class="mono">${dev.dev_effective_lines}</span><span class="muted"> 行</span>
-            ${dev.deleted ? '<span class="badge badge--excluded">产出已删除</span>' : ""}</div>
+            ${dev.deleted ? '<span class="badge badge--excluded">产出已屏蔽</span>' : ""}</div>
           <div class="muted mono" style="font-size:12px;">${esc(dev.branch ?? "")}</div>
           ${a ? `<div style="margin-top:2px;">
             <span class="badge badge--${esc(a.result_status)}">${esc(STATUS_LABELS[a.result_status] ?? a.result_status)}</span>
-            ${a.deleted ? '<span class="badge badge--excluded">归因已删除</span>' : ""}
+            ${a.deleted ? '<span class="badge badge--excluded">归因已屏蔽</span>' : ""}
             ${a.matched_mr_url ? ` <a href="${esc(a.matched_mr_url)}" target="_blank" rel="noopener">MR</a>` : ""}
             <span class="muted mono" style="font-size:12px;"> 80% ${a.attributed_lines_80} 行 · 置信度 ${(a.confidence * 100).toFixed(0)}%</span>
           </div>` : '<div class="muted" style="font-size:12px;margin-top:2px;">无归因结果</div>'}
           <div style="margin-top:5px; white-space:nowrap;">
             ${dev.deleted
-              ? `<button class="btn btn--small" data-dev-restore="${esc(dev.dev_run_id)}">恢复产出</button>`
-              : `<button class="btn btn--small btn--danger" data-dev-delete="${esc(dev.dev_run_id)}">删产出</button>`}
-            ${a && a.deleted
-              ? `<button class="btn btn--small" data-attr-restore="${esc(dev.dev_run_id)}">恢复归因</button>`
-              : (a ? `<button class="btn btn--small btn--danger" data-attr-delete="${esc(dev.dev_run_id)}">删归因</button>` : "")}
-            <button class="btn btn--small" data-patch-view="${esc(dev.dev_run_id)}">看文件</button>
+              ? `<button class="btn btn--small" data-dev-restore="${esc(dev.dev_run_id)}">恢复</button>`
+              : `<button class="btn btn--small" data-dev-archive="${esc(dev.dev_run_id)}" title="向管理员申请屏蔽该产出：生成行数不再计入采纳率的分母">申请屏蔽产出</button>`}
+            ${a && a.deleted ? `<button class="btn btn--small" data-attr-restore="${esc(dev.dev_run_id)}">恢复</button>` : ""}
+            <button class="btn btn--small" data-patch-view="${esc(dev.dev_run_id)}">看 diff</button>
           </div>`;
       }
       return `<tr>
@@ -1609,11 +1704,11 @@ async function expandWf(wfId, row, toggle = true) {
         <dt>工作流 ID</dt><dd class="mono" style="font-size:12px;">${esc(w.workflow_run_id)}</dd>
         <dt>版本 / 入口</dt><dd>${esc(w.aaw_version)} · ${esc(w.entry ?? "—")} · 步骤 ${w.steps} 个</dd>
         <dt>时间</dt><dd>开始 ${esc(fmtDay(w.started_at))} · 最近活动 ${esc(fmtDay(w.last_activity_at))}</dd>
-        ${w.deleted ? `<dt>删除留痕</dt><dd><span class="badge badge--excluded">${esc(REASON_CODES[w.deleted_reason_code] ?? w.deleted_reason_code ?? "—")}</span>
+        ${w.deleted ? `<dt>屏蔽留痕</dt><dd><span class="badge badge--excluded">${esc(REASON_CODES[w.deleted_reason_code] ?? w.deleted_reason_code ?? "—")}</span>
           ${esc(w.deleted_reason ?? "")} · ${esc(w.deleted_by ?? "—")} · ${esc(w.deleted_at ? fmtDay(w.deleted_at) : "—")}</dd>` : ""}
       </dl>
       <table>
-        <thead><tr><th>步骤</th><th>状态</th><th>开始</th><th>产出 / 归因（按粒度删除）</th></tr></thead>
+        <thead><tr><th>步骤</th><th>状态</th><th>开始</th><th>产出 / 归因（可按层级申请屏蔽）</th></tr></thead>
         <tbody>${steps || '<tr><td colspan="4" class="muted">无步骤</td></tr>'}</tbody>
       </table>
     </td>`;
@@ -1624,11 +1719,10 @@ async function expandWf(wfId, row, toggle = true) {
 
 $("#awBody").addEventListener("click", async (event) => {
   const detailBtn = event.target.closest("button[data-wf-detail]");
-  const wfDelete = event.target.closest("button[data-wf-delete]");
+  const wfArchive = event.target.closest("button[data-wf-archive]");
   const wfRestore = event.target.closest("button[data-wf-restore]");
-  const devDelete = event.target.closest("button[data-dev-delete]");
+  const devArchive = event.target.closest("button[data-dev-archive]");
   const devRestore = event.target.closest("button[data-dev-restore]");
-  const attrDelete = event.target.closest("button[data-attr-delete]");
   const attrRestore = event.target.closest("button[data-attr-restore]");
   const patchBtn = event.target.closest("button[data-patch-view]");
   if (detailBtn) {
@@ -1639,21 +1733,16 @@ $("#awBody").addEventListener("click", async (event) => {
     await openPatchViewer(patchBtn.dataset.patchView);
     return;
   }
-  if (wfDelete) return runWfDelete(wfDelete.dataset.wfDelete);
+  if (wfArchive) return requestTargetArchive("workflow", wfArchive.dataset.wfArchive, "该工作流（含全部产出与归因）");
   if (wfRestore) return runWfRestore(wfRestore.dataset.wfRestore);
-  if (devDelete) {
-    return runLevelDelete("dev-runs", devDelete.dataset.devDelete, "删除开发产出",
-      "该产出的生成行数将退出分母，归因随之失效；可随时恢复。");
+  if (devArchive) {
+    return requestTargetArchive("dev_run", devArchive.dataset.devArchive, "该开发产出");
   }
   if (devRestore) return runLevelRestore("dev-runs", devRestore.dataset.devRestore);
-  if (attrDelete) {
-    return runLevelDelete("attributions", attrDelete.dataset.attrDelete, "删除归因结果",
-      "仅删除匹配结果：该产出退回未归因状态（分母在、分子无）。");
-  }
   if (attrRestore) return runLevelRestore("attributions", attrRestore.dataset.attrRestore);
 });
 
-/* 补丁查看器：文件概要为主视图（动了哪些文件、+N/-M），原文按需切换 */
+/* diff 查看器：文件概要为主视图（动了哪些文件、+N/-M），原文按需切换 */
 function renderPatchSummary(data) {
   const max = Math.max(1, ...data.files.map((f) => f.additions + f.deletions));
   const rows = data.files.map((f) => {
@@ -1705,7 +1794,7 @@ function renderPatchLines(content) {
 
 async function openPatchViewer(devRunId) {
   const mask = $("#patchMask");
-  $("#patchFileName").textContent = "补丁文件加载中…";
+  $("#patchFileName").textContent = "diff 文件加载中…";
   $("#patchMeta").textContent = "";
   $("#patchBody").innerHTML = "";
   mask.hidden = false;
@@ -1748,19 +1837,6 @@ document.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && !$("#patchMask").hidden) closePatchViewer();
 });
 
-async function runWfDelete(wfId) {
-  const payload = await askDelete({
-    title: "删除工作流",
-    message: "整条工作流（含全部 dev 产出与归因）将从所有统计与列表中消失；可在「仅已删除」归档中恢复。",
-  });
-  if (!payload) return;
-  try {
-    await api(`/api/v1/admin/workflows/${wfId}/delete`, { method: "POST", body: JSON.stringify(payload) });
-    toast("已删除工作流：统计口径即时出清，可在归档中恢复");
-    loadWorkflows();
-  } catch (error) { toast(`删除失败：${error.message}`, true); }
-}
-
 async function runWfRestore(wfId) {
   if (!(await askConfirm("恢复工作流", "恢复后该工作流及其全部产出、归因重新计入统计。确定恢复？"))) return;
   try {
@@ -1768,16 +1844,6 @@ async function runWfRestore(wfId) {
     toast("已恢复工作流");
     loadWorkflows();
   } catch (error) { toast(`恢复失败：${error.message}`, true); }
-}
-
-async function runLevelDelete(kind, id, title, message) {
-  const payload = await askDelete({ title, message });
-  if (!payload) return;
-  try {
-    await api(`/api/v1/admin/${kind}/${id}/delete`, { method: "POST", body: JSON.stringify(payload) });
-    toast("已删除：统计口径即时出清，可随时恢复");
-    loadWorkflows();
-  } catch (error) { toast(`删除失败：${error.message}`, true); }
 }
 
 async function runLevelRestore(kind, id) {
@@ -1951,6 +2017,31 @@ $("#compBody").addEventListener("click", (event) => {
   if (jump) jumpToWorkflows(jump.dataset.compJump);
 });
 
+/* 组件行「查工作流」：跳到工作流页并按仓库筛选（服务端模糊匹配，子串即可） */
+function jumpToWorkflows(repository) {
+  $("#awRepo").value = repository;
+  awPage = 1;
+  $("#awState").value = "all";
+  $("#awLifecycle").value = "active";
+  clickTab("workflows");
+  flashCard("#tab-workflows");
+}
+
+/* 归因行「去工作流处理」：切到工作流页、清掉筛选、展开目标工作流并滚动到位。
+   归因页不再直接发起屏蔽——持续无法归因时，要么重跑解决，要么到工作流里屏蔽整条产出。 */
+function jumpToWorkflowDetail(workflowId) {
+  $("#awRepo").value = "";
+  $("#awUser").value = "";
+  $("#awState").value = "all";
+  $("#awLifecycle").value = "all";
+  awPage = 1;
+  awOpen.add(workflowId);
+  clickTab("workflows");
+  flashCard("#tab-workflows");
+  const row = document.querySelector(`tr[data-wf="${CSS.escape(workflowId)}"]`);
+  if (row) row.scrollIntoView({ behavior: "smooth", block: "center" });
+}
+
 /* --------------------------- AI Master view --------------------------- */
 let amRoster = [];
 let amAssignComps = [];
@@ -2068,7 +2159,7 @@ $("#amRosterBody").addEventListener("click", async (event) => {
     if (!(await askConfirm("删除 AI Master", `确定删除 ${name}？其名下组件将回到「未分配」。`))) return;
     try {
       await api(`/api/v1/ai-masters/${deleteBtn.dataset.amDelete}`, { method: "DELETE" });
-      toast("已删除");
+      toast("已解除屏蔽");
       loadAiMaster();
     } catch (error) { toast(`删除失败：${error.message}`, true); }
   }
@@ -2134,13 +2225,13 @@ async function loadHealth() {
     markSync(true);
     const b = data.backlog;
     const stones = [
-      { label: "等待补丁", value: b.waiting_patch, cls: "stone--iris", hint: "开发已完成、等待补丁上传确认", jump: { record_kind: "not_queued" } },
-      { label: "等待调度", value: b.waiting_dispatch, cls: "stone--warn", hint: "已入队、等待下一轮扫描", jump: { attribution_status: "pending" } },
-      { label: "退避中", value: b.backing_off, cls: "stone--tangerine", hint: "失败后按退避规则等待重试", jump: { attribution_status: "retry_pending" } },
+      { label: "等 diff 上传", value: b.waiting_patch, cls: "stone--iris", hint: "开发已完成、diff 文件尚未上传", jump: { record_kind: "not_queued" } },
+      { label: "排队中", value: b.waiting_dispatch, cls: "stone--warn", hint: "已提交、等待下一轮计算", jump: { attribution_status: "pending" } },
+      { label: "等待重试", value: b.backing_off, cls: "stone--tangerine", hint: "失败后按间隔等待下一轮自动重试", jump: { attribution_status: "retry_pending" } },
       { label: "疑似卡死", value: b.suspected_stuck, cls: b.suspected_stuck ? "stone--alert" : "stone--warn",
         hint: `执行超时 ${b.stuck_breakdown.stale_running} · 重试逾期 ${b.stuck_breakdown.overdue_retry}，建议人工重跑` },
-      { label: "超窗失败", value: b.window_expired_failed, cls: b.window_expired_failed ? "stone--magenta" : "stone--warn",
-        hint: "已超出重试窗口的失败记录，可用「强制重跑」补救", jump: { attribution_status: "failed" } },
+      { label: "重试已过期", value: b.window_expired_failed, cls: b.window_expired_failed ? "stone--magenta" : "stone--warn",
+        hint: "失败且超过重试期限，可用「重跑」补救", jump: { attribution_status: "failed" } },
     ];
     $("#backlogStones").innerHTML = stones.map((s, index) => `
       <div class="stone ${s.cls}" ${s.jump ? `data-jump="${index}" title="${esc(s.hint)}"` : `title="${esc(s.hint)}"`}>
@@ -2155,7 +2246,7 @@ async function loadHealth() {
       <span class="health-band__item">连续失败 <b class="mono">${s.consecutive_failures}</b></span>
       <span class="health-band__item">扫描间隔 <b class="mono">${Math.round(s.scan_interval_seconds / 60)} 分钟</b> · 重试窗口 <b class="mono">${Math.round(s.retry_window_seconds / 86400)} 天</b></span>`;
     $("#failGroups").innerHTML = (data.failures || []).length
-      ? data.failures.map((g) => `<span class="chip chip--warn" data-failflag="${esc(g.reason)}" title="点击按此原因圈定记录">${esc(REASON_LABELS[g.reason] ?? g.reason)} × ${g.count}</span>`).join("")
+      ? data.failures.map((g) => `<span class="chip chip--warn" data-failflag="${esc(g.reason)}" title="点击按此原因圈定记录">${esc(flagLabel(g.reason))} × ${g.count}</span>`).join("")
       : "";
     const trendRow = (p) => `
       <tr><td class="mono">${esc(p.date.slice(5))}</td><td class="mono">${p.matched}</td>
@@ -2211,7 +2302,7 @@ $("#failGroups").addEventListener("click", async (event) => {
 
 function renderKindChip() {
   const chip = $("#kindChip");
-  const labels = { not_queued: "仅看未入队", queued: "仅看已入队" };
+  const labels = { not_queued: "仅看等 diff", queued: "仅看已提交" };
   if (recRecordKind === "all") { chip.style.display = "none"; } else {
     chip.textContent = `${labels[recRecordKind] ?? recRecordKind} ✕`;
     chip.style.display = "inline-block";
@@ -2274,10 +2365,8 @@ function recordRowHtml(item) {
     (NOISE_FLAGS.has(flag) ? noise : meaningful).push(flag);
   }
   const flags = meaningful.slice(0, 2).map((flag) => {
-    if (flag === "admin_retry") return '<span class="chip chip--admin">人工重跑</span>';
-    if (flag === "admin_retry_expired") return '<span class="chip chip--admin">超窗补跑</span>';
     const warn = flag.startsWith("remote_") || flag.startsWith("worker_");
-    return `<span class="chip${warn ? "--warn" : ""}" title="${esc(flag)}">${esc(flag.length > 22 ? flag.slice(0, 20) + "…" : flag)}</span>`;
+    return `<span class="chip${warn ? "--warn" : ""}" title="${esc(flag)}">${esc(flagLabel(flag).length > 22 ? flagLabel(flag).slice(0, 20) + "…" : flagLabel(flag))}</span>`;
   }).join("")
     + (meaningful.length > 2 ? `<span class="chip" title="${esc(meaningful.slice(2).join("、"))}">+${meaningful.length - 2}</span>` : "")
     + (noise.length ? `<span class="muted mono" style="font-size:12px;" title="${esc(noise.join("、"))}">+${noise.length}</span>` : "");
@@ -2286,24 +2375,22 @@ function recordRowHtml(item) {
     : `<span class="mono">重试 ${item.retry_count}</span>${item.next_retry_at
       ? `<div class="muted mono" style="font-size:12px;">下次 ${esc(fmtShort(item.next_retry_at))}</div>` : ""}`;
   const throughput = item.record_status === "not_queued"
-    ? '<span class="muted">未产生生成</span>'
+    ? '<span class="muted">等 diff 上传</span>'
     : `<span class="mono">${item.attributed_lines_80 ?? 0}</span><span class="muted"> / ${item.dev_effective_lines} 行</span>${item.matched_mr_url
       ? ` <a href="${esc(item.matched_mr_url)}" target="_blank" rel="noopener">MR</a>` : ""}`;
   const retryBtn = item.record_status === "not_queued"
     ? ""
-    : `<button class="btn btn--small" data-retry="${esc(item.dev_run_id)}">重跑</button>
-       ${item.retry_window_expired ? `<button class="btn btn--small btn--danger" data-force="${esc(item.dev_run_id)}">强制重跑</button>` : ""}`;
+    : `<button class="btn btn--small" data-retry="${esc(item.dev_run_id)}">重跑</button>`;
   const excludeBtn = item.admin_excluded
     ? `<button class="btn btn--small" data-restore="${esc(item.dev_run_id)}">恢复</button>`
-    : `<button class="btn btn--small btn--danger" data-exclude="${esc(item.dev_run_id)}">删除</button>`;
+    : `<button class="btn btn--small btn--danger" data-goto-wf="${esc(item.workflow_run_id)}" title="到工作流页对这条产出申请屏蔽：持续无法归因时，要么重跑解决，要么屏蔽整条产出">去工作流处理</button>`;
   return `
   <tr data-dev="${esc(item.dev_run_id)}" class="${(fresh + excluded).trim()}">
     <td>
       <span class="badge badge--${esc(item.record_status)}">${esc(STATUS_LABELS[item.record_status] ?? item.record_status)}</span>
-      ${item.admin_excluded ? '<span class="badge badge--excluded">已删除</span>' : ""}
-      ${item.attribution_deleted ? '<span class="badge badge--excluded">归因已删除</span>' : ""}
-      ${item.retry_window_expired && item.record_status === "failed" ? '<div class="muted" style="font-size:12px;margin-top:3px;">窗口已过</div>' : ""}
-      ${item.upload_status && item.record_status === "not_queued" ? `<div class="muted" style="font-size:12px;margin-top:3px;">补丁: ${esc(item.upload_status)}</div>` : ""}
+      ${item.admin_excluded ? '<span class="badge badge--excluded">已屏蔽</span>' : ""}
+      ${item.attribution_deleted ? '<span class="badge badge--excluded">归因已屏蔽</span>' : ""}
+      ${item.upload_status && item.record_status === "not_queued" ? `<div class="muted" style="font-size:12px;margin-top:3px;">diff: ${esc(item.upload_status)}</div>` : ""}
     </td>
     <td><b>${esc(item.repository)}</b><div class="muted">${esc(item.sr ?? "")} ${esc(item.ar ?? "")} · ${esc(item.workflow_kind ?? "aaw")}${item.entry ? " / " + esc(item.entry) : ""}</div></td>
     <td>${esc(item.user_name)}<div class="muted mono" style="font-size:12px;">${esc(item.user_email ?? "")}</div></td>
@@ -2339,28 +2426,28 @@ async function expandDetail(devRunId, row, toggle = true) {
     mount.innerHTML = `<td colspan="10">
       <div class="grid halves">
         <dl class="kv">
-          <dt>归因结果</dt><dd>${a ? `80% ${a.attributed_lines_80} 行 · 90% ${a.attributed_lines_90} 行 · 60% ${a.attributed_lines_60 ?? "—"} 行 · 置信度 ${(a.confidence * 100).toFixed(1)}%` : "无（未入队或尚未产出）"}</dd>
+          <dt>归因结果</dt><dd>${a ? `80% ${a.attributed_lines_80} 行 · 90% ${a.attributed_lines_90} 行 · 60% ${a.attributed_lines_60 ?? "—"} 行 · 置信度 ${(a.confidence * 100).toFixed(1)}%` : "无（等 diff 上传或尚未产出）"}</dd>
           <dt>MR 信息</dt><dd>${item.matched_mr_iid
             ? `${esc(item.matched_mr_iid)} · 合入 ${esc(a?.mr_merged_at ? fmtDay(a.mr_merged_at) : "—")} · <a href="${esc(item.matched_mr_url)}" target="_blank" rel="noopener">链接</a>` : "—"}</dd>
           <dt>分支</dt><dd class="mono">${esc(item.dev_run?.branch ?? "—")} → 目标 ${esc(a?.target_branch ?? "—")}</dd>
-          <dt>判定口径</dt><dd>算法 ${esc(a?.algorithm_version ?? "—")} · diff 规则 ${esc(a?.diff_rule_version ?? "—")}</dd>
+          <dt>判定口径</dt><dd>算法 ${esc((a?.algorithm_version && a.algorithm_version !== "pending") ? a.algorithm_version : "未开始")} · diff 规则 ${esc((a?.diff_rule_version && a.diff_rule_version !== "pending") ? a.diff_rule_version : "未开始")}</dd>
           <dt>代码构成</dt><dd class="mono">${stats && stats.total_effective_lines !== undefined
             ? `有效 ${stats.total_effective_lines} 行${stats.production_lines !== undefined ? ` · 生产 ${stats.production_lines}` : ""}${stats.test_lines !== undefined ? ` · 测试 ${stats.test_lines}` : ""}${stats.script_lines !== undefined ? ` · 脚本 ${stats.script_lines}` : ""}${stats.config_lines !== undefined ? ` · 配置 ${stats.config_lines}` : ""}${stats.doc_lines !== undefined ? ` · 文档 ${stats.doc_lines}` : ""}` : "—"}</dd>
-          <dt>补丁上传</dt><dd>${item.upload ? `${esc(item.upload.status)}${item.upload.confirmed_at ? " · 确认于 " + esc(fmtDay(item.upload.confirmed_at)) : ""}` : (item.upload_status ? esc(item.upload_status) : "无上传记录")}</dd>
+          <dt>diff 上传</dt><dd>${item.upload ? `${esc(item.upload.status)}${item.upload.confirmed_at ? " · 确认于 " + esc(fmtDay(item.upload.confirmed_at)) : ""}` : (item.upload_status ? esc(item.upload_status) : "无上传记录")}</dd>
         </dl>
         <dl class="kv">
           <dt>工作流</dt><dd>${item.workflow ? `${esc(item.workflow.workflow_kind)} / ${esc(item.workflow.entry ?? "—")} · 版本 ${esc(item.workflow.aaw_version ?? "—")} · ${esc(item.workflow.status)}` : "—"}</dd>
           <dt>开发记录</dt><dd>${esc(item.dev_run?.status ?? "—")} · 开始 ${esc(item.dev_started_at ? fmtDay(item.dev_started_at) : "—")} · 完成 ${esc(item.dev_completed_at ? fmtDay(item.dev_completed_at) : "—")}</dd>
           <dt>重试</dt><dd>已重试 ${item.retry_count} 次 · 下次 ${esc(item.next_retry_at ?? "—")}</dd>
-          <dt>治理</dt><dd>${g.admin_excluded
-            ? `<span class="badge badge--excluded">产出已删除${g.deleted_reason_code ? " · " + esc(REASON_CODES[g.deleted_reason_code] ?? g.deleted_reason_code) : ""}</span> ${esc(g.reason ?? "—")} · 操作人 ${esc(g.by ?? "—")} · ${esc(g.at ? fmtDay(g.at) : "—")}`
-            : '未删除'}${g.workflow_deleted
-            ? ' <span class="badge badge--excluded">所在工作流已删除</span>' : ""}${g.attribution_deleted
-            ? ` <span class="badge badge--excluded">归因已删除${g.attribution_deleted_reason_code ? " · " + esc(REASON_CODES[g.attribution_deleted_reason_code] ?? g.attribution_deleted_reason_code) : ""}</span>` : ""}</dd>
-          <dt>质量标记</dt><dd>${(item.quality_flags ?? []).map((f) => `<span class="chip">${esc(f)}</span>`).join("") || "无"}</dd>
+          <dt>屏蔽治理</dt><dd>${g.admin_excluded
+            ? `<span class="badge badge--excluded">产出已屏蔽${g.deleted_reason_code ? " · " + esc(REASON_CODES[g.deleted_reason_code] ?? g.deleted_reason_code) : ""}</span> ${esc(g.reason ?? "—")} · 操作人 ${esc(g.by ?? "—")} · ${esc(g.at ? fmtDay(g.at) : "—")}`
+            : '未屏蔽'}${g.workflow_deleted
+            ? ' <span class="badge badge--excluded">所在工作流已屏蔽</span>' : ""}${g.attribution_deleted
+            ? ` <span class="badge badge--excluded">归因已屏蔽${g.attribution_deleted_reason_code ? " · " + esc(REASON_CODES[g.attribution_deleted_reason_code] ?? g.attribution_deleted_reason_code) : ""}</span>` : ""}</dd>
+          <dt>质量标记</dt><dd>${(item.quality_flags ?? []).map((f) => `<span class="chip" title="${esc(f)}">${esc(flagLabel(f))}</span>`).join("") || "无"}</dd>
           <dt>dev_run_id</dt><dd class="mono" style="font-size:12px;">${esc(devRunId)}</dd>
-          <dt>补丁文件</dt><dd style="white-space:nowrap;">
-            <button class="btn btn--small" data-patch-view="${esc(devRunId)}">看文件</button>
+          <dt>diff 文件</dt><dd style="white-space:nowrap;">
+            <button class="btn btn--small" data-patch-view="${esc(devRunId)}">看 diff</button>
           </dd>
         </dl>
       </div>
@@ -2374,20 +2461,20 @@ $("#recBody").addEventListener("click", async (event) => {
   const detailBtn = event.target.closest("button[data-detail]");
   const retryBtn = event.target.closest("button[data-retry]");
   const forceBtn = event.target.closest("button[data-force]");
-  const excludeBtn = event.target.closest("button[data-exclude]");
+  const gotoWfBtn = event.target.closest("button[data-goto-wf]");
   const restoreBtn = event.target.closest("button[data-restore]");
   const patchBtn = event.target.closest("button[data-patch-view]");
-  const row = event.target.closest("tr[data-dev]");
-  if (!row) return;
-  const devRunId = row.dataset.dev;
-  if (detailBtn) { await expandDetail(devRunId, row); return; }
+  // 展开的详情行（tr.detail-row）不在 tr[data-dev] 里，先处理其中的操作再找主行。
   if (patchBtn) {
     await openPatchViewer(patchBtn.dataset.patchView);
     return;
   }
-  if (retryBtn) { await runRetry(devRunId, retryBtn, false); return; }
-  if (forceBtn) { await runRetry(devRunId, forceBtn, true); return; }
-  if (excludeBtn) { await runExclude(devRunId, false); return; }
+  if (gotoWfBtn) { jumpToWorkflowDetail(gotoWfBtn.dataset.gotoWf); return; }
+  const row = event.target.closest("tr[data-dev]");
+  if (!row) return;
+  const devRunId = row.dataset.dev;
+  if (detailBtn) { await expandDetail(devRunId, row); return; }
+  if (retryBtn || forceBtn) { await runRetry(devRunId, retryBtn ?? forceBtn, !!forceBtn); return; }
   if (restoreBtn) { await runRestore(devRunId, false); }
 });
 
@@ -2418,33 +2505,31 @@ async function runRetry(devRunId, button, force) {
   button.disabled = true;
   button.textContent = "重跑中…";
   try {
-    await api(`/api/v1/admin/attribution/records/${devRunId}/${force ? "force-retry" : "retry"}`, { method: "POST" });
+    // 超窗记录先走 force，未超窗走普通 retry；两者对用户都是同一个「重跑」。
+    const url = force
+      ? `/api/v1/admin/attribution/records/${devRunId}/force-retry`
+      : `/api/v1/admin/attribution/records/${devRunId}/retry`;
+    let response;
+    try {
+      response = await api(url, { method: "POST" });
+    } catch (error) {
+      // 普通重跑撞上窗口过期时自动降级为强制重跑，页面上不再区分两个入口。
+      if (!force && /重试窗口/.test(error.message)) {
+        response = await api(`/api/v1/admin/attribution/records/${devRunId}/force-retry`, { method: "POST" });
+        force = true;
+      } else {
+        throw error;
+      }
+    }
     freshRows.add(devRunId);
     await loadRecords();
     toast(force ? "已强制重置为 pending 并唤醒调度器（留痕：超窗补跑）" : "已重置为 pending 并唤醒调度器");
     await watchRerun(devRunId, button);
   } catch (error) {
-    toast(`${force ? "强制重跑" : "重跑"}失败：${error.message}`, true);
+    toast(`重跑失败：${error.message}`, true);
     button.disabled = false;
-    button.textContent = force ? "强制重跑" : "重跑";
+    button.textContent = "重跑";
   }
-}
-
-async function runExclude(devRunId) {
-  const payload = await askDelete({
-    title: "删除开发产出",
-    message: "该产出的生成行数将退出分母，归因随之失效；可随时恢复。删除将按理由留痕。",
-  });
-  if (!payload) return;
-  try {
-    await api(`/api/v1/admin/dev-runs/${devRunId}/delete`, {
-      method: "POST",
-      body: JSON.stringify(payload),
-    });
-    toast("已删除：该产出已退出采纳统计，可随时恢复");
-    loadRecords();
-    loadHealth();
-  } catch (error) { toast(`删除失败：${error.message}`, true); }
 }
 
 async function runRestore(devRunId) {
@@ -2465,7 +2550,7 @@ async function runBulk(action) {
     action === "force_retry" ? { attribution_status: $("#fStatus").value || "failed" } : {}
   );
   if (action === "exclude" && filters.excluded !== "hidden") {
-    toast("批量删除请在「隐藏已删除」模式下圈定记录", true);
+    toast("批量屏蔽请在「隐藏已屏蔽」模式下圈定记录", true);
     return;
   }
   let preview;
@@ -2475,7 +2560,7 @@ async function runBulk(action) {
       body: JSON.stringify({ action, dry_run: true, ...filters }),
     });
   } catch (error) { toast(`预览失败：${error.message}`, true); return; }
-  const names = { retry: "批量重跑", force_retry: "批量强制重跑", exclude: "批量删除产出", restore: "批量恢复" };
+  const names = { retry: "批量重跑", force_retry: "批量重跑失败", exclude: "批量屏蔽产出", restore: "批量恢复" };
   const lines = [
     `命中 ${preview.matched} 条，其中可执行 ${preview.applicable} 条`,
     preview.skipped_running ? `执行中跳过 ${preview.skipped_running} 条` : "",
@@ -2485,13 +2570,15 @@ async function runBulk(action) {
   let reason = null;
   let operator = null;
   if (action === "exclude") {
+    // 批量屏蔽沿用「删除产出」通道逐条执行（留痕、可恢复），但语义上以屏蔽申请为准；
+    // 管理员在确认弹窗里看到的就是最终执行效果。
     reason = await askDialog({
-      title: "批量删除产出",
-      message: "将圈定当前筛选命中的记录按同一理由删除（可随时恢复）。",
-      placeholder: "备注（必填，将留痕；理由码记为「其他」）",
+      title: "批量屏蔽产出",
+      message: `将对筛选命中的 ${preview.applicable} 条产出按同一理由屏蔽并留痕（可在「仅看已屏蔽」中逐条恢复）。`,
+      placeholder: "屏蔽理由（必填，将留痕；理由码记为「其他」）",
       initial: "",
     });
-    if (reason === null || !reason) { toast("必须填写备注", true); return; }
+    if (reason === null || !reason) { toast("必须填写理由", true); return; }
     operator = await askDialog({ title: "操作人（选填）", placeholder: "姓名", initial: "" });
     if (operator === null) return;
   }
@@ -2964,6 +3051,7 @@ let anPreviewFingerprint = "";
 let anAdminView = "rules";
 let anEventsCache = [];   // 分页渲染的原始列表（翻页时不再请求）
 let anReviewCache = [];   // 屏蔽审核列表同上
+let anRuleFilter = { keyword: "", category: "" };   // 规则管理页筛选（名称 + 种类）
 const anEventPager = makePager("anEvent", renderAnomalyEventPage);
 const anRulePager = makePager("anRule", renderAnomalyRulePage);
 const anReviewPager = makePager("anReview", renderAnomalyReviewPage);
@@ -2974,25 +3062,21 @@ const AN_SCOPE_LABELS = { platform: "全平台", component: "指定组件", repo
 const AN_PARAM_META = {
   max_idle_hours: { label: "连续无活动超过", unit: "小时", note: "达到该时长后判定为停滞或中断" },
   active_window_days: { label: "近期活跃范围", unit: "天", note: "只检查这段时间内曾经活跃的仓库" },
-  baseline_days: { label: "历史基线周期", unit: "天", note: "使用这段时间的数据计算正常水平" },
-  deviation_ratio: { label: "偏离历史水平超过", unit: "%", note: "例如 50 表示偏离一半", scale: 100 },
-  min_sample: { label: "最少历史样本", unit: "条", note: "样本不足时不产生异常" },
   window_hours: { label: "观察窗口", unit: "小时", note: "在这段时间内统计持续情况" },
   min_count: { label: "最少出现次数", unit: "次", note: "达到该次数才视为持续异常" },
+  recent_days: { label: "近期窗口", unit: "天", note: "用最近这段时间的采纳率与历史对比" },
+  baseline_days: { label: "历史基线周期", unit: "天", note: "使用这段时间的采纳率作为正常水平" },
+  drop_pp: { label: "下降超过", unit: "个百分点", note: "近期采纳率比基线低到这个幅度才产生异常" },
+  min_runs: { label: "单侧最少产出数", unit: "次", note: "近期或基线任一侧产出不足时不判定" },
+  min_lines: { label: "单侧最少有效代码", unit: "行", note: "样本行数不足时不判定，避免小基数误报" },
   grace_minutes: { label: "允许恢复时间", unit: "分钟", note: "短暂状态变化不会立即产生异常" },
   statuses: { label: "需要关注的步骤状态", note: "多个状态使用逗号分隔", kind: "list" },
-  max_wait_hours: { label: "人工确认等待超过", unit: "小时", note: "达到该时长后提示门禁超时" },
-  step_types: { label: "需要关注的人工步骤", note: "多个类型使用逗号分隔", kind: "list" },
-  wait_hours: { label: "等待补丁超过", unit: "小时", note: "开发结束后仍未收到补丁的等待时长" },
-  pending_hours: { label: "待处理停留超过", unit: "小时", note: "归因任务排队过久的判断线" },
-  running_minutes: { label: "执行中停留超过", unit: "分钟", note: "归因任务运行过久的判断线" },
+  wait_hours: { label: "等待 diff 超过", unit: "小时", note: "开发结束后仍未收到 diff 的等待时长" },
   retry_hours: { label: "等待重试超过", unit: "小时", note: "归因任务长时间未重试的判断线" },
   min_retry_count: { label: "失败重试达到", unit: "次", note: "达到该次数后判定持续失败" },
-  ignored_flags: { label: "忽略的质量标记", note: "这些标记不会产生异常，使用逗号分隔", kind: "list" },
   active_days: { label: "近期活跃范围", unit: "天", note: "只检查这段时间内仍在使用的人员" },
   lag_positions: { label: "落后正式版本达到", unit: "个版本", note: "达到该差距后提示旧版本使用" },
   allowlist: { label: "允许使用的非发布版本", note: "多个版本使用逗号分隔；留空表示都不允许", kind: "list" },
-  confirm_count: { label: "连续回退达到", unit: "次", note: "排除一次性的版本切换" },
 };
 
 async function ensureAnomalyAdmin() {
@@ -3041,6 +3125,7 @@ async function loadAnomalyModule() {
 
 async function loadAnomalyAdminModule() {
   if (!await ensureAnomalyAdmin()) return;
+  refreshReviewBadge();  // 角标不阻塞当前视图加载
   if (anAdminView === "rules") await loadAnomalyRules();
   if (anAdminView === "reviews") await loadAnomalyReviews();
   if (anAdminView === "masters") await loadAnomalyMasterBoard();
@@ -3350,6 +3435,27 @@ async function requestAnomalyArchive(id) {
   } catch (error) { toast(`提交失败：${error.message}`, true); }
 }
 
+/* 业务页（工作流/归因）的「申请屏蔽」：直接对数据对象发起屏蔽申请，
+   与异常事件发起的申请共用屏蔽审核清单。需要管理员会话（CSRF）。 */
+async function requestTargetArchive(targetType, targetId, targetLabel) {
+  if (!await ensureAnomalyAdmin()) return;
+  const requestedBy = await askDialog({ title: "申请屏蔽", placeholder: "申请人姓名", initial: "运营管理员" });
+  if (!requestedBy) return;
+  const reason = await askDialog({
+    title: "屏蔽理由",
+    message: `提交后「${targetLabel}」进入屏蔽待审，数据暂不计入任何变化；管理员在「异常管理 · 屏蔽审核」通过后才出清统计。`,
+    placeholder: "必填",
+  });
+  if (!reason) return;
+  try {
+    await anomalyWrite(`/api/v1/anomalies/targets/${targetType}/${targetId}/archive-requests`, {
+      method: "POST",
+      body: JSON.stringify({ requested_by: requestedBy, reason }),
+    });
+    toast("屏蔽申请已提交，等待管理员审核");
+  } catch (error) { toast(`提交失败：${error.message}`, true); }
+}
+
 async function createAnomalyIssue(id) {
   const reporter = await askDialog({ title: "提问题 / 提诉求", placeholder: "提出人" });
   if (!reporter) return;
@@ -3412,14 +3518,40 @@ async function loadAnomalyRules() {
     const data = await api("/api/v1/anomalies/rules");
     const order = new Map(anCatalog.map((item, index) => [item.code, index]));
     anRules = data.items.sort((a, b) => (order.get(a.detector_type) ?? 999) - (order.get(b.detector_type) ?? 999));
-    const enabled = anRules.filter((item) => item.status === "enabled").length;
-    $("#anRuleCount").textContent = `${anRules.length} 类检测 · ${enabled} 类已启用`;
+    syncAnomalyRuleFilterOptions();
     renderAnomalyRulePage();
   } catch (error) { toast(`规则加载失败：${error.message}`, true); }
 }
 
+/* 种类下拉选项跟随当前规则列表生长（而不是写死四类），筛掉的类别不会留在下拉里 */
+function syncAnomalyRuleFilterOptions() {
+  const select = $("#anRuleCategory");
+  const categories = [...new Set(anRules.map((item) => item.category))];
+  const wanted = categories.map((value) => `<option value="${esc(value)}" ${anRuleFilter.category === value ? "selected" : ""}>${esc(AN_CATEGORY_LABELS[value] || value)}</option>`).join("");
+  if (select.dataset.options !== wanted) {
+    select.dataset.options = wanted;
+    select.innerHTML = `<option value="" ${anRuleFilter.category ? "" : "selected"}>全部</option>${wanted}`;
+    if (anRuleFilter.category && !categories.includes(anRuleFilter.category)) anRuleFilter.category = "";
+  }
+}
+
+function filteredAnomalyRules() {
+  const keyword = anRuleFilter.keyword.trim().toLowerCase();
+  return anRules.filter((item) => {
+    if (anRuleFilter.category && item.category !== anRuleFilter.category) return false;
+    if (!keyword) return true;
+    const spec = anCatalog.find((type) => type.code === item.detector_type);
+    return (spec?.name || item.name).toLowerCase().includes(keyword);
+  });
+}
+
 function renderAnomalyRulePage() {
-  const pageRows = anRulePager.slice(anRules);
+  const rows = filteredAnomalyRules();
+  const enabled = anRules.filter((item) => item.status === "enabled").length;
+  const shown = rows.length === anRules.length ? `${anRules.length} 类检测` : `符合条件 ${rows.length} / ${anRules.length} 类`;
+  $("#anRuleCount").textContent = `${shown} · ${enabled} 类已启用`;
+  $("#anRuleEmpty").hidden = rows.length > 0;
+  const pageRows = anRulePager.slice(rows);
   $("#anRuleList").innerHTML = pageRows.map((item) => {
       const spec = anCatalog.find((type) => type.code === item.detector_type);
       const isEnabled = item.status === "enabled";
@@ -3533,6 +3665,28 @@ async function toggleAnomalyRule(id, status) {
   } catch (error) { toast(`更新失败：${error.message}`, true); }
 }
 
+$("#anEnableAll").addEventListener("click", async () => {
+  const disabled = anRules.filter((item) => item.status !== "enabled" && item.status !== "deleted");
+  if (!disabled.length) { toast("所有规则都已启用"); return; }
+  const ok = await askConfirm("一键全部启用", `将启用 ${disabled.length} 类停用中的规则，立即生效并开始产生异常事件。确认执行？`);
+  if (!ok) return;
+  const button = $("#anEnableAll");
+  button.disabled = true;
+  let done = 0, failed = 0;
+  try {
+    for (const rule of disabled) {
+      try {
+        await anomalyWrite(`/api/v1/anomalies/rules/${rule.id}/status`, {
+          method: "POST", body: JSON.stringify({ status: "enabled", reason: "一键全部启用" }),
+        });
+        done += 1;
+      } catch { failed += 1; }
+    }
+  } finally { button.disabled = false; }
+  toast(failed ? `已启用 ${done} 类，${failed} 类失败` : `已启用 ${done} 类规则`);
+  loadAnomalyRules();
+});
+
 async function loadAnomalyReviews() {
   if (!await ensureAnomalyAdmin()) return;
   try {
@@ -3540,13 +3694,34 @@ async function loadAnomalyReviews() {
     anReviewCache = data.items;
     renderAnomalyReviewPage();
     $("#anReviewEmpty").hidden = data.items.length > 0;
+    updateReviewBadge();
   } catch (error) { toast(`审核列表加载失败：${error.message}`, true); }
+}
+
+/* 「屏蔽审核」按钮上的待处理角标：只数待审核（pending）的申请。
+   进入异常管理页时也会单独刷一次，管理员不用点进审核视图就能看到有没有活。 */
+function updateReviewBadge() {
+  const badge = $("#anReviewBadge");
+  if (!badge) return;
+  const pending = anReviewCache.filter((item) => item.status === "pending").length;
+  badge.textContent = pending > 99 ? "99+" : String(pending);
+  badge.hidden = pending === 0;
+}
+
+async function refreshReviewBadge() {
+  if (!await ensureAnomalyAdmin()) return;
+  try {
+    const data = await api("/api/v1/anomalies/archive-requests?status=pending");
+    anReviewCache = data.items;
+    updateReviewBadge();
+  } catch { /* 角标失败不打扰；进审核视图时会拉全量 */ }
 }
 
 function renderAnomalyReviewPage() {
   const targetLabels = { workflow: "工作流", dev_run: "开发产出", attribution: "归因记录", event: "异常事件" };
+  const sourceLabels = { event: "异常事件", admin_console: "业务页" };
   const pageRows = anReviewPager.slice(anReviewCache);
-  $("#anReviewBody").innerHTML = pageRows.map((item) => `<tr><td>${esc(item.requested_by)}<div class="an-sub">${new Date(item.created_at).toLocaleString()}</div></td><td>${esc(targetLabels[item.target_type] ?? item.target_type)}<div class="an-sub mono">${esc(item.target_id)}</div></td><td>${esc(item.reason)}<div class="an-sub">影响 ${item.impact_preview.affected_rows ?? "—"} 条数据</div></td><td><span class="badge">${esc(item.status === "pending" ? "待审核" : item.status === "approved" ? "已通过" : item.status === "rejected" ? "已拒绝" : item.status)}</span>${item.review_note ? `<div class="an-sub">${esc(item.review_note)}</div>` : ""}</td><td>${item.status === "pending" ? `<div class="an-actions"><button class="btn btn--small btn--primary" data-an-review="${item.id}" data-approved="true">通过</button><button class="btn btn--small btn--danger" data-an-review="${item.id}" data-approved="false">拒绝</button></div>` : "—"}</td></tr>`).join("");
+  $("#anReviewBody").innerHTML = pageRows.map((item) => `<tr><td>${esc(sourceLabels[item.source] ?? item.source ?? "异常事件")}发起<div class="an-sub">${esc(item.requested_by)} · ${new Date(item.created_at).toLocaleString()}</div></td><td>${esc(targetLabels[item.target_type] ?? item.target_type)}<div class="an-sub mono">${esc(item.target_id)}</div></td><td>${esc(item.reason)}<div class="an-sub">影响 ${item.impact_preview.affected_rows ?? "—"} 条数据</div></td><td><span class="badge">${esc(item.status === "pending" ? "待审核" : item.status === "approved" ? "已通过" : item.status === "rejected" ? "已拒绝" : item.status)}</span>${item.review_note ? `<div class="an-sub">${esc(item.review_note)}</div>` : ""}</td><td>${item.status === "pending" ? `<div class="an-actions"><button class="btn btn--small btn--primary" data-an-review="${item.id}" data-approved="true">通过</button><button class="btn btn--small btn--danger" data-an-review="${item.id}" data-approved="false">拒绝</button></div>` : "—"}</td></tr>`).join("");
   anReviewPager.render();
 }
 
@@ -3713,6 +3888,140 @@ $("#anEvaluate").addEventListener("click", async () => {
     const result = await anomalyWrite("/api/v1/anomalies/rules/evaluate", { method: "POST" });
     toast(`检测完成：${result.matches} 个对象命中`); loadAnomalyRules();
   } catch (error) { toast(`检测失败：${error.message}`, true); }
+});
+$("#anRuleSearch").addEventListener("input", () => {
+  anRuleFilter.keyword = $("#anRuleSearch").value;
+  anRulePager.reset(); renderAnomalyRulePage();
+});
+$("#anRuleCategory").addEventListener("change", () => {
+  anRuleFilter.category = $("#anRuleCategory").value;
+  anRulePager.reset(); renderAnomalyRulePage();
+});
+$("#anRuleReset").addEventListener("click", () => {
+  anRuleFilter = { keyword: "", category: "" };
+  $("#anRuleSearch").value = "";
+  $("#anRuleCategory").value = "";
+  anRulePager.reset(); renderAnomalyRulePage();
+});
+
+/* ------------------------------ 上报过滤（管理员） ------------------------------
+   服务端保存一份 filters（与 CLI 内置 yaml 同构），CLI 上报前拉取并按
+   「内置 → 服务端 → 项目级」合并。保存 = 插入新版本行，历史即审计。
+   编辑界面是六个字段组：大小上限用数字输入，五个列表用 chip 编辑器
+   （点 × 删、底部输入框回车加），比 textarea 逐行编辑直观。 */
+const TF_LIST_FIELDS = [
+  { key: "excluded_dirs", box: "tfExcludedDirsBox", input: "tfExcludedDirsInput", kind: "dir" },
+  { key: "excluded_suffixes", box: "tfExcludedSuffixesBox", input: "tfExcludedSuffixesInput", kind: "suffix" },
+];
+let tfCurrent = null;   // 当前生效版本（null = 从未保存过）
+const tfDraft = { max_file_bytes: 0 };   // 编辑中的列表值，chips 从这里渲染
+
+function tfRenderChips() {
+  for (const field of TF_LIST_FIELDS) {
+    const values = tfDraft[field.key] || [];
+    const box = document.getElementById(field.box);
+    box.innerHTML = values.map((value, index) => {
+      const neg = field.kind === "dir" && value.startsWith("!");
+      const bad = tfChipInvalid(value, field.kind);
+      const cls = bad ? "tf-chip tf-chip--bad" : neg ? "tf-chip tf-chip--neg" : "tf-chip";
+      const title = bad ? "格式有问题，保存会被拒绝" : neg ? "取消排除（移出清单）" : "";
+      return `<span class="${cls}" title="${title}"><code>${esc(value)}</code><button type="button" data-tf-del="${field.key}" data-index="${index}" aria-label="删除">×</button></span>`;
+    }).join("");
+  }
+  const size = Number(tfDraft.max_file_bytes) || 0;
+  $("#tfSizeLabel").textContent = tfHumanBytes(size);
+}
+
+function tfHumanBytes(size) {
+  if (!size || size <= 0) return "—";
+  const units = [["GiB", 1024 ** 3], ["MiB", 1024 ** 2], ["KiB", 1024]];
+  for (const [unit, factor] of units) {
+    if (size >= factor) return `≈ ${Number((size / factor).toFixed(1)).toLocaleString("en-US")} ${unit}`;
+  }
+  return `${fmtInt(size)} 字节`;
+}
+
+function tfChipInvalid(value, kind) {
+  if (!value.trim()) return true;
+  if (kind === "suffix") return !/^\.[^./\\]+$/.test(value);
+  if (kind === "regex") { try { new RegExp(value); return false; } catch { return true; } }
+  return false;   // dir 的格式交给服务端校验（! 前缀、路径段合法性）
+}
+
+function tfReadForm() {
+  return {
+    max_file_bytes: Number($("#tfMaxFileBytes").value) || 0,
+    ...Object.fromEntries(TF_LIST_FIELDS.map((field) => [field.key, [...(tfDraft[field.key] || [])]])),
+  };
+}
+
+function tfWriteForm(filters) {
+  tfDraft.max_file_bytes = filters.max_file_bytes;
+  $("#tfMaxFileBytes").value = String(filters.max_file_bytes ?? "");
+  for (const field of TF_LIST_FIELDS) {
+    tfDraft[field.key] = [...(filters[field.key] || [])];
+    document.getElementById(field.input).value = "";
+  }
+  tfRenderChips();
+}
+
+// chip 删除 + 输入框回车添加（Enter 在空输入框上不吞，留给表单提交习惯）
+document.getElementById("tfEditorCard").addEventListener("click", (event) => {
+  const del = event.target.closest("[data-tf-del]");
+  if (!del) return;
+  const field = TF_LIST_FIELDS.find((item) => item.key === del.dataset.tfDel);
+  if (field) {
+    tfDraft[field.key].splice(Number(del.dataset.index), 1);
+    tfRenderChips();
+  }
+});
+// 大小上限输入即时换算
+$("#tfMaxFileBytes").addEventListener("input", () => {
+  tfDraft.max_file_bytes = Number($("#tfMaxFileBytes").value) || 0;
+  $("#tfSizeLabel").textContent = tfHumanBytes(tfDraft.max_file_bytes);
+});
+for (const field of TF_LIST_FIELDS) {
+  const input = document.getElementById(field.input);
+  input.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    const value = input.value.trim();
+    if (!value) return;
+    if (!tfDraft[field.key].includes(value)) tfDraft[field.key].push(value);
+    input.value = "";
+    tfRenderChips();
+  });
+}
+
+async function loadTelemetryFilters() {
+  if (!await ensureAnomalyAdmin()) return;
+  try {
+    tfCurrent = await api("/api/v1/admin/telemetry-config");
+    $("#tfMeta").textContent = `v${tfCurrent.version} · ${new Date(tfCurrent.updated_at).toLocaleString()} · ${tfCurrent.updated_by}`;
+    tfWriteForm(tfCurrent.filters);
+  } catch (error) {
+    if (String(error.message).includes("尚未保存")) {
+      tfCurrent = null;
+      $("#tfMeta").textContent = "未保存过，CLI 使用内置默认";
+    } else { toast(`加载失败：${error.message}`, true); return; }
+  }
+}
+
+$("#tfRefresh").addEventListener("click", loadTelemetryFilters);
+$("#tfReset").addEventListener("click", () => { tfCurrent ? tfWriteForm(tfCurrent.filters) : loadTelemetryFilters(); });
+$("#tfSave").addEventListener("click", async () => {
+  const filters = tfReadForm();
+  const badChips = document.querySelectorAll(".tf-chip--bad").length;
+  if (badChips) { toast(`有 ${badChips} 条规则格式有问题（红色标签），请先修正`, true); return; }
+  try {
+    const saved = await anomalyWrite("/api/v1/admin/telemetry-config", {
+      method: "PUT", body: JSON.stringify({ filters }),
+    });
+    tfCurrent = saved;
+    $("#tfMeta").textContent = `v${saved.version} · ${new Date(saved.updated_at).toLocaleString()} · ${saved.updated_by}`;
+    $("#tfSaveHint").textContent = "已保存；CLI 最长 1 小时后拉到新规则";
+    toast(`已保存为 v${saved.version}`);
+  } catch (error) { toast(`保存失败：${error.message}`, true); }
 });
 
 /* 首屏落地：默认停在异常中心；带 ?tab= 的深链（看板「管理」入口、异常事件定位）

@@ -36,18 +36,14 @@ filters:
     - .build
     - .claude
     - .idea
+    - .codecheckcli
+    - .cac
 
-  # 文件名命中任一正则即排除（Python 正则，忽略大小写）
-  sensitive_names:
-    - '(^|[._/-])\.env($|[._/-])'
-    - '(^|[._/-]).*(?:secret|credential|token|password).*($|[._/-])'
-    - '(^|[._/-]).*\.(?:pem|key)($|[._/-])'
-
-  # 文件内容命中任一正则即排除（Python 正则，按字节匹配，忽略大小写）
-  sensitive_contents:
-    - '-----BEGIN [A-Z ]*PRIVATE KEY-----'
-    - '(?:password|api[_-]?key|access[_-]?token)\s*[:=]'
-    - 'AKIA[0-9A-Z]{16}'
-
-  # 生成上传 Diff 时排除的后缀（快照仍包含，只是不出现在最终 Diff 中）
-  diff_excluded_suffixes: ['.md', '.markdown', '.mdown', '.mkd', '.log']
+  # 排除后缀：命中即不进入 D0/D1 快照——不读取、不进 Diff、
+  # 不参与统计，flag 记 suffix_file_excluded:<文件名>。
+  # 适合所有不需要参与代码统计的文件：文档、日志，以及体积大的二进制。
+  excluded_suffixes: ['.md', '.markdown', '.mdown', '.mkd', '.log',
+    '.png', '.jpg', '.jpeg', '.gif', '.ico', '.webp', '.bmp',
+    '.pdf', '.zip', '.gz', '.tar', '.tgz', '.bz2', '.xz', '.7z',
+    '.woff', '.woff2', '.ttf', '.otf', '.eot',
+    '.jar', '.class', '.so', '.dll', '.exe', '.bin', '.wasm', '.pyc']

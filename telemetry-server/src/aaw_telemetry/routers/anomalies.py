@@ -46,6 +46,13 @@ class ArchiveRequestPayload(StrictPayload):
     requested_by: str = Field(min_length=1, max_length=128)
 
 
+class TargetArchivePayload(StrictPayload):
+    """业务页（工作流/归因）对数据对象直接发起屏蔽申请。"""
+
+    reason: str = Field(min_length=1, max_length=1000)
+    requested_by: str = Field(min_length=1, max_length=128)
+
+
 class ArchiveReviewPayload(StrictPayload):
     approved: bool
     note: str = Field(default="", max_length=1000)
@@ -218,6 +225,22 @@ def build_anomalies_router(
     ):
         return AnomalyService(session, projects).request_archive(
             event_id, payload.reason, payload.requested_by
+        )
+
+    @router.post("/targets/{target_type}/{target_id}/archive-requests", status_code=201)
+    def request_archive_for_target(
+        target_type: str,
+        target_id: uuid.UUID,
+        payload: TargetArchivePayload,
+        request: Request,
+        session: Session = Depends(session_dependency),
+    ):
+        auth.require(request, csrf=True)
+        return AnomalyService(session, projects).request_archive_for_target(
+            target_type,
+            target_id,
+            reason=payload.reason,
+            requested_by=payload.requested_by,
         )
 
     @router.post("/events/{event_id}/issues", status_code=201)
