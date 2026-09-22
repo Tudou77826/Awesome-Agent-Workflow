@@ -24,7 +24,7 @@ from .routers.objects import build_objects_router
 from .routers.releases import build_releases_router
 from .routers.telemetry import build_telemetry_router
 from .routers.testing_telemetry import build_testing_telemetry_router
-from .services.anomalies import AnomalyService
+from .services.anomalies import AnomalyService, startup_lock
 from .services.anomaly_scheduler import AnomalyScheduler
 from .services.attribution_scheduler import AttributionScheduler
 from .services.attribution_service import AttributionService
@@ -85,8 +85,11 @@ def create_app(
         if not registry_provided:
             with session_factory() as session:
                 RegistryService.load_or_seed(session, projects, settings)
-        with session_factory() as session:
-            AnomalyService(session, projects).ensure_builtin_rules()
+        # 多 worker 同时启动只让一个进程补齐内置规则；唯一约束是第二道防线。
+        with startup_lock(engine, "aaw_ensure_builtin_rules") as acquired:
+            if acquired:
+                with session_factory() as session:
+                    AnomalyService(session, projects).ensure_builtin_rules()
         scheduler_task = attribution_scheduler.start()
         image_cleanup_task = asyncio.create_task(
             issue_image_janitor.run(),

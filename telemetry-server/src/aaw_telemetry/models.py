@@ -15,6 +15,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.dialects import mysql
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -411,6 +412,20 @@ class AnomalyRule(Base):
             name="ck_anomaly_rule_status",
         ),
         Index("ix_anomaly_rule_status_type", "status", "detector_type"),
+        # 一个检测类型在一个生效范围上只能有一条规则：多 worker 启动并发补齐时，
+        # check-then-insert 会各自插入一条，加约束才能兜住（migration 0026）。
+        # scope_value 在平台级规则上是 NULL，而唯一索引视 NULL 互不相同，所以
+        # 归一成空串；已删除的规则不参与，删掉后还能重建同名规则。
+        # MySQL 不能索引表达式，该方言的等价写法在 migration 0026 里用生成列实现。
+        Index(
+            "uq_anomaly_rule_detector_scope",
+            "detector_type",
+            "scope_type",
+            text("COALESCE(scope_value, '')"),
+            unique=True,
+            sqlite_where=text("status <> 'deleted'"),
+            postgresql_where=text("status <> 'deleted'"),
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
