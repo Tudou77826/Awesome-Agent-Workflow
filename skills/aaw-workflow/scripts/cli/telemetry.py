@@ -315,8 +315,8 @@ class TelemetryStore:
                     recorded_dir_flags.add(excluded)
                     flags.append(f"dir_excluded:{excluded}")
                 continue
-            if self.config.is_sensitive_name(normalized):
-                flags.append(f"sensitive_file_excluded:{name}")
+            if self.config.is_suffix_excluded(normalized):
+                flags.append(f"suffix_file_excluded:{name}")
                 continue
             path = self.root / name
             try:
@@ -327,9 +327,6 @@ class TelemetryStore:
                     content = path.read_bytes()
                     mode = "100755" if path.stat().st_mode & stat.S_IXUSR else "100644"
             except OSError:
-                continue
-            if self.config.is_sensitive_content(content):
-                flags.append(f"sensitive_file_excluded:{name}")
                 continue
             if len(content) > self.config.max_file_bytes:
                 flags.append(f"large_file_excluded:{name}")
@@ -471,10 +468,7 @@ class TelemetryStore:
                 raise TelemetryError("Git telemetry produced invalid diff statistics")
             added, deleted, encoded_name = fields
             name = encoded_name.decode("utf-8", "surrogateescape")
-            if Path(name).suffix.lower() in self.config.diff_excluded_suffixes:
-                continue
-            # Git reports both counts as '-' when either side of a change is
-            # binary. Use Git's classification rather than guessing by suffix.
+            # 后缀排除已在快照阶段生效，这里只需挡住 Git 判定为二进制的变化。
             if added == b"-" and deleted == b"-":
                 continue
             changed.append(name)

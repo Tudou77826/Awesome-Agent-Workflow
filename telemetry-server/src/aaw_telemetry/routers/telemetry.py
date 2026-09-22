@@ -6,9 +6,11 @@ from fastapi import APIRouter, Body, Depends
 from sqlalchemy.orm import Session
 
 from ..config import ProjectRegistry, Settings
+from ..errors import ApiError
 from ..logging import request_id_var
 from ..schemas import TelemetrySyncRequest, TelemetrySyncResponse
 from ..services.ingestion import IngestionService
+from ..services.telemetry_filters import TelemetryFilterService
 
 SYNC_DESCRIPTION = """
 一个请求上报一个已经结束的 Step。消息体结构固定，不使用数组、`record_type` 或多态 `data`。
@@ -83,5 +85,24 @@ def build_telemetry_router(
         return IngestionService(session, projects, settings).process(
             payload, request_id_var.get()
         )
+
+    @router.get(
+        "/config",
+        summary="拉取服务端上报过滤配置",
+        description=(
+            "CLI 在上报前拉取当前生效的快照/Diff 过滤规则。无认证（与上报端点同级公开）。"
+            "服务端从未保存过配置时返回 404，CLI 应回退到内置默认。"
+        ),
+    )
+    def config(session: Session = Depends(session_dependency)) -> dict:
+        service = TelemetryFilterService(session)
+        row = service.current()
+        if row is None:
+            raise ApiError(404, "FILTER_CONFIG_NOT_FOUND", "尚未保存过上报过滤配置")
+        return {
+            "version": row.version,
+            "filters": row.filters,
+            "updated_at": int(row.updated_at.timestamp() * 1000),
+        }
 
     return router

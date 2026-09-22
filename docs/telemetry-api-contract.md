@@ -548,16 +548,16 @@ D0 状态文件包含：
 
 ### 7.4 文件过滤
 
-快照阶段的过滤规则来自配置文件 `skills/aaw-workflow/scripts/cli/telemetry_config.yaml` 的 `filters` 段，可由项目级配置 `<仓库根>/.aaw/telemetry.yaml` 按 key 整体替换（同名 key 覆盖，列表整体替换、不做深度合并）。默认规则如下：
+快照阶段的过滤规则按「内置默认（`skills/aaw-workflow/scripts/cli/telemetry_config.yaml`）→ 服务端配置（运营后台「上报过滤」页保存）→ 项目级配置（`<仓库根>/.aaw/telemetry.yaml`）」三层合并，同名 key 整体替换（列表不做深度合并；`excluded_dirs` 例外，为追加语义）。默认规则如下：
 
 - 无法读取的文件；
 - 单文件超过 `max_file_bytes`（默认 10 MiB）；
-- 文件名命中 `sensitive_names` 任一正则：疑似包含 `.env/secret/credential/token/password`；
-- 文件名命中 `.pem`、`.key`；
-- 内容命中 `sensitive_contents` 任一正则：私钥头、password、api key、access token、AWS AKIA 等规则；
-- 位于 `excluded_dirs` 命中目录及其全部子树内的文件。
+- 位于 `excluded_dirs` 命中目录及其全部子树内的文件；
+- 文件后缀命中 `excluded_suffixes`（文档、日志、常见二进制）。
 
-`excluded_dirs` 为整目录排除：目录路径锚定仓库根（不是任意嵌套位置命中），用 `/` 分隔、可写多段（如 `src/generated`），匹配忽略大小写；命中后该目录下的整个子树不进入快照，因此也不进入 D0/D1、不进 Diff、不参与代码统计。每被排除一个目录，在 `quality_flags` 里记一条 `dir_excluded:<目录名>`（按目录名记，同一目录下多个文件只占一条）。内置默认清单共 16 项：
+平台为内网部署，接入仓库一律不允许含保密数据，因此不做任何「敏感内容」扫描；若某仓库有不该上报的文件，用目录/后缀排除处理。历史上曾有 `sensitive_names` / `sensitive_contents` 两键做文件名与内容启发式拦截，因不能承诺效果且无场景支撑已移除。
+
+`excluded_dirs` 为整目录排除：目录路径锚定仓库根（不是任意嵌套位置命中），用 `/` 分隔、可写多段（如 `src/generated`），匹配忽略大小写；命中后该目录下的整个子树不进入快照，因此也不进入 D0/D1、不进 Diff、不参与代码统计。每被排除一个目录，在 `quality_flags` 里记一条 `dir_excluded:<目录名>`（按目录名记，同一目录下多个文件只占一条）。内置默认清单共 18 项：
 
 ```yaml
 node_modules
@@ -576,6 +576,8 @@ vendor
 .build
 .claude
 .idea
+.codecheckcli
+.cac
 ```
 
 与其它 filters 键不同，`excluded_dirs` 的项目级配置是**追加**而非整体替换：在 `<仓库根>/.aaw/telemetry.yaml` 写 `excluded_dirs: ['data']` 会在内置清单之外再排除 `data`；写 `'!vendor'` 可把内置项 `vendor` 移出排除清单，让该目录恢复正常上报（`!` 前缀既可用于取消内置项，也可取消项目自身新增的正项，removals 一律最后生效）。这是唯一与「按 key 整体替换」语义不同的 filters 键。
@@ -584,17 +586,17 @@ vendor
 
 1. `.aaw/telemetry/` 下的文件直接跳过；
 2. 命中 `excluded_dirs`：记一条 `dir_excluded:<目录名>` flag；
-3. 文件名命中 `sensitive_names`：记 `sensitive_file_excluded:<文件名>`；
+3. 命中 `excluded_suffixes`：记 `suffix_file_excluded:<文件名>`（文件不再被读取、不进入 D0/D1，因此也不会出现在 Diff 与统计中）；
 4. 读取文件（符号链接记录链接目标路径本身，不读取目标内容）；
-5. 内容命中 `sensitive_contents`：记 `sensitive_file_excluded:<文件名>`；
-6. 超过 `max_file_bytes`：记 `large_file_excluded:<文件名>`。
+5. 超过 `max_file_bytes`：记 `large_file_excluded:<文件名>`。
+
+`excluded_suffixes` 是唯一的后缀排除配置，在快照阶段生效——命中即整个文件出局，本地零成本。内置默认覆盖文档日志（`.md/.markdown/.mdown/.mkd/.log`）与常见二进制（`.png/.jpg/.gif/.ico/.webp/.bmp`、`.pdf`、`.zip/.gz/.tar` 等压缩包、`.woff/.woff2/.ttf/.otf/.eot` 字体、`.jar/.class/.so/.dll/.exe/.bin/.wasm/.pyc`）。历史上曾拆成 `diff_excluded_suffixes` / `snapshot_excluded_suffixes` 两个键（前者文件留在本地快照、仅不进最终 Diff），因对最终上传结果无差别已合并；旧键仍可读取（两键值合并生效），新配置只写 `excluded_suffixes`。
 
 生成上传 Diff 时进一步排除：
 
-- Markdown：`diff_excluded_suffixes`（默认 `.md/.markdown/.mdown/.mkd`）；
-- Git 判断为二进制的变化。
+- Git 判断为二进制的变化（不可配置）。
 
-需要注意：Markdown 和二进制是在 Diff 选择阶段排除，它们可能已经进入本地 D0/D1 bare repo；只是不会出现在最终上传的 Diff 中。其中 Git 判定的二进制排除不可配置。被 `excluded_dirs` 排除的目录则从快照阶段起就不存在，更不会出现在 Diff 中。
+需要注意：`excluded_suffixes` 命中的文件（Markdown、日志、二进制资源）从快照阶段起就不存在，更不会出现在 Diff 中；Git 判定的二进制排除发生在 Diff 生成时（不可配置），这类文件可能已进入本地 D0/D1 bare repo，只是不会出现在最终上传的 Diff 中。被 `excluded_dirs` 排除的目录同样从快照阶段起就不存在。
 
 ### 7.5 D1 与 Diff
 
@@ -603,7 +605,7 @@ vendor
 1. 重新扫描当前工作区；
 2. 创建 D1 tree；
 3. 使用 `git diff --numstat` 获取变化文件；
-4. 过滤 Markdown 和二进制；
+4. 过滤 Git 判定为二进制的变化；
 5. 使用 literal pathspec 生成 Git patch；
 6. 计算 SHA-256；
 7. 写入本地 patch 文件；
@@ -736,15 +738,16 @@ CLI 需要收到：
 
 ### 8.6 配置优先级
 
-遥测开关与过滤规则采用三层配置，优先级从高到低：
+遥测开关与过滤规则采用四层配置，优先级从高到低：
 
 1. 环境变量 `AAW_TELEMETRY_ENABLED`（仅控制开关，取值 `1/true/yes/on` 或 `0/false/no/off`，忽略大小写与空白；非法取值按配置错误处理）；
-2. 项目级配置 `<仓库根>/.aaw/telemetry.yaml`（按 key 整体替换内置同名 key，列表整体替换、不做深度合并）；
-3. 内置默认配置 `skills/aaw-workflow/scripts/cli/telemetry_config.yaml`。
+2. 项目级配置 `<仓库根>/.aaw/telemetry.yaml`（按 key 整体替换下级同名 key，列表整体替换、不做深度合并）；
+3. 服务端配置：CLI 每进程一次 GET `GET /api/v1/telemetry/config`（无认证、只读；2 秒超时，失败回退磁盘缓存 `~/.aaw/telemetry/server-config-*.json`，TTL 1 小时；两者都不可用时直接落到第 4 层，绝不因拉取失败中断上报）。运营后台「上报过滤」页负责编辑、校验、试算与保存（每次保存插入新版本行，历史即审计；见 `/api/v1/admin/telemetry-config`）；
+4. 内置默认配置 `skills/aaw-workflow/scripts/cli/telemetry_config.yaml`（随客户端分发，作为服务端不可达时的离线兜底）。
 
-例外：`filters.excluded_dirs` 采用追加语义，项目级配置的条目会并入内置清单，而不是整体替换；条目写 `!<目录>` 表示从最终清单中移除该目录（详见 7.4）。
+例外：`filters.excluded_dirs` 采用追加语义，下级配置的条目会并入上级清单，而不是整体替换；条目写 `!<目录>` 表示从最终清单中移除该目录（详见 7.4）。
 
-注意：`.aaw/` 已被 gitignore，项目级配置不入库，属于本机/本仓库的设置；内置配置文件随客户端自动更新被整体覆盖，修改应写到项目级配置。
+注意：`.aaw/` 已被 gitignore，项目级配置不入库，属于本机/本仓库的设置；内置配置文件随客户端自动更新被整体覆盖，修改应写到项目级配置或运营后台。
 
 ## 9. 当前失败行为
 
@@ -776,7 +779,7 @@ CLI 需要收到：
 - Diff 带 SHA-256；
 - task-dev 只有全部成功才清理本地文件；
 - Git 命令和 HTTP 请求有 timeout；
-- 敏感文件、大文件、Markdown 和二进制有基础过滤；
+- 排除目录、排除后缀、大文件有基础过滤；
 - 遥测失败不阻断工作流。
 
 ### 10.2 主要缺口
@@ -1092,7 +1095,6 @@ AAW_TELEMETRY_RETENTION_DAYS=...
 - metadata-only 模式不创建完整源代码快照；
 - Token 不写入日志或 payload；
 - 本地缓存设置大小和保留期；
-- 敏感扫描失败时宁可不上传 Diff；
 - 用户可以查看当前是否启用、启用何种模式。
 
 ## 12. 分阶段实施建议
@@ -1159,9 +1161,9 @@ AAW_TELEMETRY_RETENTION_DAYS=...
 1. D0 必须在代码修改前建立；
 2. 重复 next 复用 D0；
 3. tracked/untracked/ignored 选择正确；
-4. 敏感文件排除；
-5. 大文件排除；
-6. Markdown 不进入上传 Diff；
+4. 目录排除；
+5. 后缀排除（文档/日志不进入快照与 Diff）；
+6. 大文件排除；
 7. 二进制不进入上传 Diff；
 8. symlink 模式正确；
 9. SHA-256 正确；

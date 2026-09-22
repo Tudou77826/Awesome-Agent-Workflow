@@ -19,7 +19,11 @@ def upgrade() -> None:
         "issue",
         sa.Column("version", sa.Integer(), nullable=False, server_default="1"),
     )
-    op.alter_column("issue", "version", server_default=None)
+    if op.get_bind().dialect.name == "sqlite":
+        with op.batch_alter_table("issue", recreate="always") as batch:
+            batch.alter_column("version", existing_type=sa.Integer(), server_default=None)
+    else:
+        op.alter_column("issue", "version", server_default=None)
     op.create_table(
         "issue_image",
         sa.Column("id", sa.Uuid(), nullable=False),

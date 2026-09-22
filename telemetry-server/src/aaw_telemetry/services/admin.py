@@ -788,6 +788,7 @@ class AdminAttributionService:
             "dev_run_id": str(dev_run.id),
             "record_status": status,
             "attribution_status": status,
+            "workflow_run_id": str(dev_run.workflow_run_id),
             "workflow_kind": message.workflow_kind,
             "entry": message.entry,
             "repository": message.repository,

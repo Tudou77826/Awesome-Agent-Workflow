@@ -519,13 +519,20 @@ class AnomalyArchiveRequest(Base):
             "status IN ('pending', 'approved', 'rejected', 'cancelled')",
             name="ck_anomaly_archive_status",
         ),
+        CheckConstraint(
+            "source IN ('event', 'admin_console')", name="ck_anomaly_archive_source"
+        ),
         Index("ix_anomaly_archive_status_time", "status", "created_at"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
-    event_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("anomaly_event.id", ondelete="CASCADE"), nullable=False
+    # 屏蔽可由异常事件发起（管理员页「申请屏蔽」），也可由运营直接针对
+    # 工作流 / 产出 / 归因对象发起（业务页入口）——后者没有事件，event_id 为空。
+    event_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("anomaly_event.id", ondelete="CASCADE")
     )
+    # event / admin_console：这条申请从哪里发起，审核页按来源解释。
+    source: Mapped[str] = mapped_column(String(32), nullable=False, default="event")
     target_type: Mapped[str] = mapped_column(String(32), nullable=False)
     target_id: Mapped[str] = mapped_column(String(256), nullable=False)
     reason: Mapped[str] = mapped_column(String(1000), nullable=False)
@@ -622,6 +629,22 @@ class ComponentRepo(Base):
     updated_at: Mapped[datetime] = mapped_column(MILLISECOND_DATETIME, nullable=False)
 
     component: Mapped[Component] = relationship(back_populates="repos")
+
+
+class TelemetryFilterConfig(Base):
+    """Server-side snapshot/diff filter rules delivered to CLI clients.
+
+    Append-only: every save inserts a new row with a bumped version, so the
+    table doubles as change history. CLI clients GET the latest row through
+    the public /api/v1/telemetry/config endpoint.
+    """
+
+    __tablename__ = "telemetry_filter_config"
+
+    version: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    filters: Mapped[dict] = mapped_column(JSON, nullable=False)
+    updated_by: Mapped[str] = mapped_column(String(128), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(MILLISECOND_DATETIME, nullable=False)
 
 
 class IssueImage(Base):

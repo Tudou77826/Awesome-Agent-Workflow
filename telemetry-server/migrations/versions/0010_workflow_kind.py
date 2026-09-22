@@ -23,8 +23,15 @@ def upgrade() -> None:
         "telemetry_message",
         sa.Column("workflow_kind", sa.String(32), nullable=False, server_default="aaw"),
     )
-    op.alter_column("workflow_run", "workflow_kind", server_default=None)
-    op.alter_column("telemetry_message", "workflow_kind", server_default=None)
+    if op.get_bind().dialect.name == "sqlite":
+        # SQLite 不支持 ALTER COLUMN DROP DEFAULT，用 batch 重建去掉 server_default。
+        with op.batch_alter_table("workflow_run", recreate="always") as batch:
+            batch.alter_column("workflow_kind", existing_type=sa.String(32), server_default=None)
+        with op.batch_alter_table("telemetry_message", recreate="always") as batch:
+            batch.alter_column("workflow_kind", existing_type=sa.String(32), server_default=None)
+    else:
+        op.alter_column("workflow_run", "workflow_kind", server_default=None)
+        op.alter_column("telemetry_message", "workflow_kind", server_default=None)
     op.create_index(
         "ix_workflow_kind_project_started",
         "workflow_run",

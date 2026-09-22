@@ -11,7 +11,7 @@ def _scripts() -> ScriptDirectory:
 
 
 def test_migration_graph_has_one_head() -> None:
-    assert _scripts().get_heads() == ["0023_anomaly_rule_archive_control"]
+    assert _scripts().get_heads() == ["0025_archive_request_source"]
 
 
 def test_merge_revision_joins_both_schema_branches() -> None:
