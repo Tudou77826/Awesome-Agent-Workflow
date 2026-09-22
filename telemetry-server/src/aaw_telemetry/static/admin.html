@@ -3124,6 +3124,7 @@ const AN_PARAM_META = {
   wait_hours: { label: "等待 diff 超过", unit: "小时", note: "开发结束后仍未收到 diff 的等待时长" },
   retry_hours: { label: "等待重试超过", unit: "小时", note: "归因任务长时间未重试的判断线" },
   min_retry_count: { label: "失败重试达到", unit: "次", note: "达到该次数后判定持续失败" },
+  threshold_percent: { label: "采纳率低于", unit: "%", note: "单条产出的采纳率低于这个水平就提示" },
   active_days: { label: "近期活跃范围", unit: "天", note: "只检查这段时间内仍在使用的人员" },
   lag_positions: { label: "落后正式版本达到", unit: "个版本", note: "达到该差距后提示旧版本使用" },
   allowlist: { label: "允许使用的非发布版本", note: "多个版本使用逗号分隔；留空表示都不允许", kind: "list" },
@@ -3563,18 +3564,14 @@ async function requestTargetArchive(targetType, targetId, targetLabel, repositor
   } catch (error) { toast(`提交失败：${error.message}`, true); }
 }
 
-async function createAnomalyIssue(id) {
-  const reporter = await askDialog({ title: "提问题 / 提诉求", placeholder: "提出人" });
-  if (!reporter) return;
-  const assignee = await askDialog({ title: "问题负责人", placeholder: "负责人姓名" });
-  if (!assignee) return;
-  const suggestion = await askDialog({ title: "优化建议", message: "说明希望产品、组件或流程如何改进。", placeholder: "必填" });
-  if (!suggestion) return;
-  try {
-    await api(`/api/v1/anomalies/events/${id}/issues`, { method: "POST", body: JSON.stringify({ reporter, assignee, suggestion }) });
-    toast("问题或诉求已记录到问题看板");
-    loadAnomalyEvents();
-  } catch (error) { toast(`生成失败：${error.message}`, true); }
+/* 提问题：不在异常这边自造表单，直接到问题许愿池去写（那边有富文本与贴图）。
+   问题与异常是两套互不相干的东西，所以只把提出人带过去，其他一律不带。 */
+function createAnomalyIssue(id) {
+  const item = anEvents.get(id) || {};
+  const reporter = item.ai_master_name || archiveRequesterName({ repository: item.repository });
+  const url = new URL("/portal/wishes.html", location.origin);
+  if (reporter) url.searchParams.set("reporter", reporter);
+  window.open(url.toString(), "_blank", "noopener");
 }
 
 async function loadAnomalyCatalog() {

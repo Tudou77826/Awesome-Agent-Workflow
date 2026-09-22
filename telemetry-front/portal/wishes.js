@@ -559,5 +559,17 @@
     };
     resetEditor(defaultDocument(""));
     load();
+    applyReporterDeepLink();
   });
+
+  /* 从运营后台「提问题」跳过来时只带一个提出人（?reporter=），预填并直接打开
+     新增表单。其余异常信息一律不带——问题与异常是两套互不相干的东西。 */
+  function applyReporterDeepLink() {
+    const reporter = (new URLSearchParams(location.search).get("reporter") || "").trim();
+    if (!reporter) return;
+    const field = $("#issueForm").elements.reporter;
+    if (!field) return;
+    openNew();          // openNew 会 reset 表单，所以先开表单再回填
+    field.value = reporter;
+  }
 })();
