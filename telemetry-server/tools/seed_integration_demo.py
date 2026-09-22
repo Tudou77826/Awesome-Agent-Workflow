@@ -100,6 +100,13 @@ class Workflow:
 
     def _clock(self, *, final: bool = False) -> tuple[int, int, int]:
         offset = self.step_seq * self.step_hours
+        # 起始偏移必须容得下整条链路：否则会生长出未来时间的上报，
+        # 看板上就是"未来某刻"的假数据。
+        if offset >= self.t0 * 24:
+            raise ValueError(
+                f"{self.tag}: 链路长度 {offset:.1f}h 超过起始偏移 {self.t0 * 24:.1f}h，"
+                "会生成未来时间戳；请调小 step_hours 或调大 start_days_ago"
+            )
         started = ms(self.t0, hour_offset=offset)
         completed = ms(self.t0, hour_offset=offset + self.step_hours * 0.7)
         updated = completed
@@ -271,11 +278,14 @@ for idx, (sr, days) in enumerate([("SR-9004", 30), ("SR-9005", 25), ("SR-9006", 
     baseline_targets += wf.dev_targets
 
 recent_targets: list[str] = []
-for idx, (sr, days) in enumerate([("SR-9007", 6), ("SR-9008", 3), ("SR-9009", 1)], start=1):
+# step_hours 要保证整条链路不回跑到未来：steps(10) × step_hours ≤ 起始偏移。
+for idx, (sr, days, hours) in enumerate(
+    [("SR-9007", 6, 4.0), ("SR-9008", 3, 4.0), ("SR-9009", 1, 2.0)], start=1
+):
     wf = Workflow(
         f"ops-recent-{idx}", user_email="lihang@example.com", user_name="李航",
         version="2.3.2", sr=sr, repository="telemetry-server",
-        start_days_ago=days, step_hours=4.0,
+        start_days_ago=days, step_hours=hours,
     )
     wf.run_sr_full([(f"AR-900{7 + idx}", {f"src/handlers/r{idx}.py": 100})])
     recent_targets += wf.dev_targets
