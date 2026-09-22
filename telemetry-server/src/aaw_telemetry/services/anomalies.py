@@ -146,6 +146,17 @@ DETECTOR_SPECS: dict[str, DetectorSpec] = {
             sentence="归因任务失败重试达到 {min_retry_count} 仍未成功",
         ),
         DetectorSpec(
+            "low_adoption",
+            "attribution",
+            "产出采纳率偏低",
+            "单条产出的采纳率低于阈值",
+            {"threshold_percent": 50, "window_days": 30},
+            sentence=(
+                "近 {window_days} 内归因完成的产出，采纳率（80% 口径）低于 "
+                "{threshold_percent}"
+            ),
+        ),
+        DetectorSpec(
             "old_version_active",
             "version",
             "旧版本持续活跃",
@@ -532,6 +543,67 @@ class EvidenceProvider:
             )
             for attr, dev, workflow in rows
         ]
+
+    def _detect_low_adoption(self, params: dict, now: datetime) -> list[DetectorHit]:
+        """单条产出的采纳率低于阈值。
+
+        与「采纳率大幅下降」不同：那条比的是仓库自身的历史变化（相对下降），
+        这条看的是每条产出自身的绝对水平，按任务定位到具体是哪一条产出低了。
+
+        分母用 code_statistics 的有效行数，与组件页的采纳率口径同源；不设最小
+        行数——任务粒度下改动能很少，哪怕只采纳了一行也要能被看到。分母为 0
+        （没有可统计的有效行）无法计算比例，跳过。
+        """
+        cutoff = now - timedelta(days=float(params["window_days"]))
+        threshold = float(params["threshold_percent"]) / 100
+        rows = self.session.execute(
+            select(CodeAttribution, DevRun, WorkflowRun)
+            .select_from(CodeAttribution)
+            .join(DevRun, DevRun.id == CodeAttribution.dev_run_id)
+            .join(WorkflowRun, WorkflowRun.id == DevRun.workflow_run_id)
+            .where(
+                CodeAttribution.attribution_status.in_(
+                    ["finalized_match", "finalized_no_match"]
+                ),
+                CodeAttribution.deleted.is_(False),
+                DevRun.completed_at.is_not(None),
+                DevRun.completed_at >= cutoff,
+                DevRun.admin_excluded.is_(False),
+                WorkflowRun.deleted.is_(False),
+            )
+        ).all()
+        hits = []
+        for attr, dev, workflow in rows:
+            total = int((dev.code_statistics or {}).get("total_effective_lines", 0))
+            if total <= 0:
+                continue
+            adopted = attr.attributed_lines_80 or 0
+            rate = adopted / total
+            if rate >= threshold:
+                continue
+            base = self._attribution_hit(
+                attr,
+                dev,
+                workflow,
+                "产出采纳率偏低",
+                f"该产出生成 {total} 行，采纳 {adopted} 行（{rate:.0%}）",
+                f"< {params['threshold_percent']}%",
+            )
+            hits.append(
+                DetectorHit(
+                    **{
+                        **base.__dict__,
+                        "actual_value": f"{rate:.0%}",
+                        "evidence": {
+                            **(base.evidence or {}),
+                            "effective_lines": total,
+                            "attributed_lines_80": adopted,
+                            "adoption_rate": round(rate, 4),
+                        },
+                    }
+                )
+            )
+        return hits
 
     def _detect_adoption_drop(self, params: dict, now: datetime) -> list[DetectorHit]:
         recent = timedelta(days=float(params["recent_days"]))

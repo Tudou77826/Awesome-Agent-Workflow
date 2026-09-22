@@ -816,3 +816,94 @@ def test_startup_lock_is_a_noop_on_sqlite(client):
 
     with startup_lock(client.app.state.engine, "aaw_ensure_builtin_rules") as acquired:
         assert acquired is True
+
+
+def test_low_adoption_flags_single_dev_run_without_minimum_lines(client):
+    """单条产出采纳率偏低：按任务定位到具体产出，不设最小行数。
+
+    任务粒度下改动可能很少，哪怕只有一行也要能被看到，所以没有样本下限；
+    只有分母为 0（没有可统计的有效行）才跳过。
+    """
+    headers = _admin(client)
+    now = datetime.now(UTC)
+    # 两条产出：一条采纳率 0%（会被报），一条 100%（不报）
+    ids = {}
+    for index, days_ago in enumerate([2, 1]):
+        completed = int((now - timedelta(days=days_ago)).timestamp() * 1000)
+        started = completed - 3_600_000
+        payload = message(
+            message_id=uuid.uuid4(),
+            workflow_id=uuid.uuid4(),
+            sr=f"SR-{9500 + index}",
+            ar=f"AR-{8500 + index}",
+            status="done",
+            with_file=True,
+            workflow_completed=True,
+            started_at=started,
+            step_started_at=started,
+            step_completed_at=completed - 1_000,
+            updated_at=completed,
+        )
+        assert sync(client, payload).status_code == 200, payload
+        upload_diff(client, payload)
+        ids[payload["message_id"]] = index
+
+    # 桩归因总是 100% 采纳；把第一条压到 0（阈值有序：90 ≤ 80 ≤ 60）
+    from aaw_telemetry.services.anomalies import AnomalyService as Service
+
+    victim = [k for k, v in ids.items() if v == 0][0]
+    with Session(client.app.state.engine) as session:
+        session.execute(
+            update(CodeAttribution)
+            .where(CodeAttribution.dev_run_id == uuid.UUID(victim))
+            .values(attributed_lines_90=0, attributed_lines_80=0, attributed_lines_60=0)
+        )
+        session.commit()
+
+    items = client.get("/api/v1/anomalies/rules", headers=headers).json()["items"]
+    rule = next(item for item in items if item["detector_type"] == "low_adoption")
+    updated = client.put(
+        f"/api/v1/anomalies/rules/{rule['id']}",
+        headers=headers,
+        json={
+            "name": rule["name"], "category": rule["category"],
+            "detector_type": "low_adoption", "scope_type": "platform",
+            "params": {"threshold_percent": 50, "window_days": 30},
+            "status": "enabled", "change_reason": "验证低采纳检测",
+        },
+    )
+    assert updated.status_code == 200, updated.text
+
+    with Session(client.app.state.engine) as session:
+        service = Service(session, client.app.state.projects)
+        result = service.evaluate(dry_run=True)
+        by_rule = {row["rule_id"]: row for row in result["items"]}
+        hit = by_rule[rule["id"]]
+    assert hit["matches"] == 1, hit
+    assert "采纳" in hit["samples"][0]
+
+    # 真实执行一次，确认事件落在被压到 0 的那条产出上
+    with Session(client.app.state.engine) as session:
+        Service(session, client.app.state.projects).evaluate()
+    events = client.get(
+        "/api/v1/anomalies/events?admin_view=true", headers=headers
+    ).json()["items"]
+    low = [e for e in events if e["detector_type"] == "low_adoption"]
+    assert len(low) == 1, low
+    assert low[0]["object_key"] == victim
+    assert low[0]["category"] == "attribution"
+    assert low[0]["evidence"]["adoption_rate"] == 0.0
+    assert low[0]["actual_value"] == "0%"
+
+    # 采纳率回到 100% 后不再命中：阈值以上不判定
+    with Session(client.app.state.engine) as session:
+        session.execute(
+            update(CodeAttribution)
+            .where(CodeAttribution.dev_run_id == uuid.UUID(victim))
+            .values(attributed_lines_90=2, attributed_lines_80=2, attributed_lines_60=2)
+        )
+        session.commit()
+    with Session(client.app.state.engine) as session:
+        result = Service(session, client.app.state.projects).evaluate(dry_run=True)
+        by_rule = {row["rule_id"]: row for row in result["items"]}
+        assert by_rule[rule["id"]]["matches"] == 0
