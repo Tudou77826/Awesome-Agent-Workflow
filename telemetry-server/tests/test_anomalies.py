@@ -656,3 +656,148 @@ def test_adoption_drop_detects_rate_decline_not_noise(client):
         result = Service(session, client.app.state.projects).evaluate(dry_run=True)
         by_rule = {row["rule_id"]: row for row in result["items"]}
         assert by_rule[rule["id"]]["matches"] == 0
+
+
+def test_seed_survives_concurrent_insert_without_rolling_back_batch(tmp_path):
+    """多 worker 并发补齐：撞唯一约束只作废冲突那一条，本轮其他规则必须留下。
+
+    复现路径：A 读到空表 → B 抢先插入同一检测类型并提交 → A flush 撞约束。
+    用 before_flush 钩子在 A 第一次写库前插入竞争行，把竞态变成确定的时序。
+    """
+    from sqlalchemy import create_engine, event
+
+    from aaw_telemetry.database import Base
+
+    engine = create_engine(f"sqlite+pysqlite:///{(tmp_path / 'race.db').as_posix()}")
+    Base.metadata.create_all(engine)
+    competitor = sorted(DETECTOR_SPECS)[-1]
+
+    with Session(engine) as session:
+        service = AnomalyService(session, _race_registry())
+        fired = {"done": False}
+
+        def insert_competitor(_session, _ctx, _instances):
+            if fired["done"]:
+                return
+            fired["done"] = True
+            with Session(engine) as rival:
+                rival.add(_rule_row(competitor))
+                rival.commit()
+
+        event.listen(session, "before_flush", insert_competitor)
+        created = service.ensure_builtin_rules()
+
+    with Session(engine) as session:
+        rows = session.scalars(select(AnomalyRule).where(AnomalyRule.status != "deleted")).all()
+    codes = [row.detector_type for row in rows]
+    assert sorted(codes) == sorted(DETECTOR_SPECS)
+    assert len(codes) == len(set(codes))
+    # 10 条里有一条是竞争者插的，A 只认领它自己成功的部分。
+    assert created == len(DETECTOR_SPECS) - 1
+
+
+def _race_registry():
+    from aaw_telemetry.config import ComponentsDocument, ProjectRegistry
+
+    return ProjectRegistry(ComponentsDocument.model_validate({"components": {}}))
+
+
+def _rule_row(detector_type: str) -> AnomalyRule:
+    spec = DETECTOR_SPECS[detector_type]
+    now = datetime.now(UTC)
+    return AnomalyRule(
+        id=uuid.uuid4(),
+        name=spec.name,
+        category=spec.category,
+        detector_type=spec.code,
+        scope_type="platform",
+        scope_value=None,
+        params=dict(spec.defaults),
+        allow_archive=True,
+        status="disabled",
+        version=1,
+        change_reason="并发竞争者写入",
+        created_by="rival",
+        updated_by="rival",
+        created_at=now,
+        updated_at=now,
+    )
+
+
+class _RecordingConnection:
+    """记录执行过的语句，并在执行时做一次 commit 模拟 session 归还连接。"""
+
+    def __init__(self, *, acquired: int = 1) -> None:
+        self.statements: list[str] = []
+        self.acquired = acquired
+
+    def execute(self, statement, parameters=None):
+        self.statements.append(str(statement))
+        return _ScalarResult(self.acquired)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args):
+        return False
+
+
+class _ScalarResult:
+    def __init__(self, value):
+        self._value = value
+
+    def scalar(self):
+        return self._value
+
+
+class _FakeMySQL:
+    name = "mysql"
+
+
+class _FakeEngine:
+    """最小替身：只暴露 startup_lock 用到的 dialect 与 connect。"""
+
+    def __init__(self, *, acquired: int = 1) -> None:
+        self.dialect = _FakeMySQL()
+        self.connection = _RecordingConnection(acquired=acquired)
+        self.connect_calls = 0
+
+    def connect(self):
+        self.connect_calls += 1
+        return self.connection
+
+
+def test_startup_lock_releases_on_the_same_connection_it_acquired(client):
+    """GET_LOCK / RELEASE_LOCK 必须落在同一条连接上，否则锁根本放不掉。"""
+    from aaw_telemetry.services.anomalies import startup_lock
+
+    engine = _FakeEngine()
+    with startup_lock(engine, "aaw_ensure_builtin_rules") as acquired:
+        assert acquired is True
+        # 被包住的补种子会自己 commit，模拟此后连接被归还连接池。
+        engine.connection.statements.append("-- commit")
+
+    assert engine.connect_calls == 1
+    joined = " | ".join(engine.connection.statements)
+    assert "GET_LOCK" in joined
+    assert "RELEASE_LOCK" in joined
+    # 取锁与放锁之间没有换过连接（只 connect 一次即证明）。
+
+
+def test_startup_lock_skips_work_when_lock_is_taken(client):
+    from aaw_telemetry.services.anomalies import startup_lock
+
+    engine = _FakeEngine(acquired=0)
+    with startup_lock(engine, "aaw_ensure_builtin_rules") as acquired:
+        assert acquired is False
+    joined = " | ".join(engine.connection.statements)
+    assert "GET_LOCK" in joined
+    # 没拿到锁就不该去放锁。
+    assert "RELEASE_LOCK" not in joined
+
+
+def test_startup_lock_is_a_noop_on_sqlite(client):
+    from aaw_telemetry.services.anomalies import startup_lock
+
+    with startup_lock(client.app.state.engine, "aaw_ensure_builtin_rules") as acquired:
+        assert acquired is True

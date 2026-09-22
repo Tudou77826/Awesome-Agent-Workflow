@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import hashlib
 import logging
+import shutil
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
@@ -463,6 +465,7 @@ class AdminAttributionService:
             )
         if attribution.attribution_status == "running":
             raise ApiError(409, "ATTRIBUTION_RUNNING", "归因任务正在执行中，请等待本轮结束")
+        self._restore_archived_diff(dev_run_id)
         attribution.attribution_status = "pending"
         attribution.retry_count = 0
         attribution.next_retry_at = None
@@ -481,6 +484,73 @@ class AdminAttributionService:
         )
         return self._legacy_item(
             attribution, self.session.get(DevRun, dev_run_id), self._window_cutoff()
+        )
+
+    def _restore_archived_diff(self, dev_run_id: uuid.UUID) -> None:
+        """把已归档的补丁拷回原位，让强制重跑能重新读到 diff。
+
+        DiffArchiver 只在归因进入终态、且补丁过了保留期后才归档；force_retry 会把
+        终态重置回 pending，此时原位置已空，调度器 _load_request 会报
+        "attribution diff is missing"。这里按归档记录把文件拷回去。
+
+        用 copy2 而非 move：归档副本留在 archive 目录作为备份。同时把 expires_at
+        顺延一个保留期——否则下一轮归档（条件是 expires_at <= now）会立刻再次搬走
+        文件，重跑窗口只剩一个归档周期。
+        """
+        upload = self.session.scalar(
+            select(ObjectUpload).where(ObjectUpload.owner_id == dev_run_id)
+        )
+        if upload is None or upload.status != "archived" or not upload.archive_key:
+            return
+        root = self.settings.object_storage_dir.resolve()
+        archive_path = (root / upload.archive_key).resolve()
+        target_path = (root / upload.object_key).resolve()
+        if not archive_path.is_relative_to(root) or not target_path.is_relative_to(root):
+            logger.error(
+                "恢复归档 diff 时路径越界，已跳过",
+                extra={
+                    "event": "admin.diff_restore.invalid_path",
+                    "dev_run_id": str(dev_run_id),
+                    "archive_key": upload.archive_key,
+                    "object_key": upload.object_key,
+                },
+            )
+            return
+        if not archive_path.is_file():
+            logger.error(
+                "归档 diff 文件不存在，无法恢复",
+                extra={
+                    "event": "admin.diff_restore.missing_archive",
+                    "dev_run_id": str(dev_run_id),
+                    "archive_key": upload.archive_key,
+                },
+            )
+            return
+        if hashlib.sha256(archive_path.read_bytes()).hexdigest() != upload.sha256:
+            logger.error(
+                "归档 diff 摘要不匹配，已拒绝恢复",
+                extra={
+                    "event": "admin.diff_restore.hash_mismatch",
+                    "dev_run_id": str(dev_run_id),
+                    "archive_key": upload.archive_key,
+                },
+            )
+            return
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(archive_path, target_path)
+        now = _now()
+        upload.status = "confirmed"
+        upload.archived_at = None
+        upload.archive_key = None
+        upload.expires_at = now + timedelta(seconds=self.settings.diff_retention_seconds)
+        upload.server_updated_at = now
+        logger.info(
+            "已恢复归档 diff 到原位置以支持强制重跑",
+            extra={
+                "event": "admin.diff_restore.restored",
+                "dev_run_id": str(dev_run_id),
+                "object_key": upload.object_key,
+            },
         )
 
     # ------------------------------------------------------------------
