@@ -796,9 +796,7 @@
         </table>
       </div>
       <div class="toolbar" style="margin:12px 0 0; justify-content:flex-end;">
-        <button class="btn" id="btnAwPrev">上一页</button>
-        <span class="mono" id="awPage">1</span>
-        <button class="btn" id="btnAwNext">下一页</button>
+        <div id="awPager" style="display:flex;gap:8px;align-items:center;"></div>
       </div>
     </div>
   </section>
@@ -910,9 +908,7 @@
         <button class="btn btn--danger" id="btnBulkExclude">批量屏蔽产出</button>
         <button class="btn" id="btnBulkRestore">批量恢复</button>
         <span style="flex:1"></span>
-        <button class="btn" id="btnRecPrev">上一页</button>
-        <span class="mono" id="recPage">1</span>
-        <button class="btn" id="btnRecNext">下一页</button>
+        <div id="recPager" style="display:flex;gap:8px;align-items:center;"></div>
       </div>
       <div class="table-wrap" style="overflow-x:auto;">
         <table>
@@ -1432,7 +1428,7 @@ document.querySelector(".portal-nav").addEventListener("click", (event) => {
   // 切页回到顶部（站内跳转随后会用 smooth 滚到目标卡片）
   window.scrollTo({ top: 0, behavior: "auto" });
   if (button.dataset.tab === "workflows") loadWorkflows();
-  if (button.dataset.tab === "attribution") { loadHealth(); recPage = 1; loadRecords(); }
+  if (button.dataset.tab === "attribution") { loadHealth(); recPager.reset(); loadRecords(); }
   if (button.dataset.tab === "components") loadComponents();
   if (button.dataset.tab === "aimaster") loadAiMaster();
   if (button.dataset.tab === "versions") loadVersions();
@@ -1459,12 +1455,15 @@ const fmtRate = (rate) => (rate == null ? "—" : (rate * 100).toFixed(1) + "%")
 
 /* ------------------------------ 通用分页 ------------------------------
    运营后台所有列表统一走这里：状态、每页条数、翻页按钮渲染与点击。
-   用法：const pager = makePager("comp", 15, renderCompRows)，渲染函数
-   从 pager.slice(rows) 取当前页，pager.render(total) 写入页脚。 */
-const PAGER_SIZE = 15;
+   用法：const pager = makePager("comp", renderCompRows)，渲染函数
+   从 pager.slice(rows) 取当前页，pager.render(total) 写入页脚。
+   服务端分页的列表（归因记录、工作流）不调 slice，取数时读
+   pager.page / pager.size，取回后 pager.render(data.total)。 */
+const PAGER_SIZES = [10, 20, 50, 100];
 function makePager(key, render) {
-  const state = { page: 1, size: PAGER_SIZE, total: 0 };
+  const state = { page: 1, size: PAGER_SIZES[1], total: 0 };
   const mount = () => document.getElementById(`${key}Pager`);
+  const pages = () => Math.max(1, Math.ceil(state.total / state.size));
   const wire = () => {
     const bar = mount();
     if (!bar || bar.dataset.wired) return;
@@ -1475,10 +1474,16 @@ function makePager(key, render) {
       if (prev && state.page > 1) { state.page -= 1; render(); }
       if (next && state.page < pages()) { state.page += 1; render(); }
     });
+    bar.addEventListener("change", (event) => {
+      if (!event.target.closest("select[data-pager-size]")) return;
+      state.size = Number(event.target.value);
+      state.page = 1;
+      render();
+    });
   };
-  const pages = () => Math.max(1, Math.ceil(state.total / state.size));
   return {
     get page() { return state.page; },
+    get size() { return state.size; },
     reset() { state.page = 1; },
     slice(rows) {
       state.total = rows.length;
@@ -1489,13 +1494,18 @@ function makePager(key, render) {
       if (total !== undefined) state.total = total;
       wire();
       const bar = mount();
-      if (bar) {
-        bar.hidden = state.total <= state.size;
-        bar.innerHTML = `<button class="btn" data-pager-prev ${state.page <= 1 ? "disabled" : ""}>上一页</button>
+      if (!bar) return;
+      // 常显：单页列表也要能看到总量、能调每页条数，藏起来就又"看不到一共多少页"了。
+      bar.hidden = false;
+      const sizeOptions = PAGER_SIZES.map(
+        (n) => `<option value="${n}" ${n === state.size ? "selected" : ""}>${n}</option>`,
+      ).join("");
+      bar.innerHTML = `<button class="btn" data-pager-prev ${state.page <= 1 ? "disabled" : ""}>上一页</button>
           <span class="mono">${state.page} / ${pages()}</span>
           <button class="btn" data-pager-next ${state.page >= pages() ? "disabled" : ""}>下一页</button>
-          <span class="muted" style="font-size:12.5px;">共 ${state.total} 条</span>`;
-      }
+          <span class="muted" style="font-size:12.5px;">共 ${state.total} 条</span>
+          <label class="muted" style="font-size:12.5px;">每页
+            <select data-pager-size style="padding:2px 6px;">${sizeOptions}</select> 条</label>`;
     },
   };
 }
@@ -1531,8 +1541,7 @@ $("#btnScanHealth").addEventListener("click", async () => {
 /* ------------------------- Workflow management ------------------------- */
 /* 浏览全量工作流 → 详情三级同屏（步骤 / DevRun / 归因）→ 三级删除与归档恢复。
    删除是可恢复的标记，所有统计口径即时出清；理由必选、操作留痕。 */
-let awPage = 1;
-const AW_PAGE_SIZE = 15;
+const awPager = makePager("aw", loadWorkflows);
 const awOpen = new Set();
 
 function askDelete({ title, message = "" }) {
@@ -1589,16 +1598,14 @@ function awParams() {
 }
 
 async function loadWorkflows() {
-  const params = new URLSearchParams({ page: awPage, page_size: AW_PAGE_SIZE });
+  const params = new URLSearchParams({ page: awPager.page, page_size: awPager.size });
   for (const [key, value] of Object.entries(awParams())) params.set(key, value);
   try {
     const data = await api(`/api/v1/admin/workflows?${params}`);
     markSync(true);
     $("#wfAdminTotal").textContent =
       `共 ${data.total} 条` + (data.deleted_total ? ` · 历史已屏蔽 ${data.deleted_total} 条` : "");
-    $("#awPage").textContent = awPage;
-    $("#btnAwPrev").disabled = awPage <= 1;
-    $("#btnAwNext").disabled = awPage * AW_PAGE_SIZE >= data.total;
+    awPager.render(data.total);
     $("#awBody").innerHTML = data.items.map(awRowHtml).join("")
       || '<tr><td colspan="8" class="muted">没有符合条件的工作流</td></tr>';
     for (const id of awOpen) {
@@ -1863,24 +1870,22 @@ async function runLevelRestore(kind, id) {
   } catch (error) { toast(`恢复失败：${error.message}`, true); }
 }
 
-$("#btnAwRefresh").addEventListener("click", () => { awPage = 1; loadWorkflows(); });
+$("#btnAwRefresh").addEventListener("click", () => { awPager.reset(); loadWorkflows(); });
 $("#btnAwReset").addEventListener("click", () => {
   ["#awUser", "#awRepo", "#awFrom", "#awTo"].forEach((id) => { $(id).value = ""; });
   $("#awState").value = "all";
   $("#awLifecycle").value = "active";
-  awPage = 1;
+  awPager.reset();
   loadWorkflows();
 });
-$("#btnAwPrev").addEventListener("click", () => { if (awPage > 1) { awPage -= 1; loadWorkflows(); } });
-$("#btnAwNext").addEventListener("click", () => { awPage += 1; loadWorkflows(); });
 ["awState", "awLifecycle", "awFrom", "awTo"].forEach((id) => {
-  $("#" + id).addEventListener("change", () => { awPage = 1; loadWorkflows(); });
+  $("#" + id).addEventListener("change", () => { awPager.reset(); loadWorkflows(); });
 });
 let awTypeTimer = null;
 ["awUser", "awRepo"].forEach((id) => {
   $("#" + id).addEventListener("input", () => {
     clearTimeout(awTypeTimer);
-    awTypeTimer = setTimeout(() => { awPage = 1; loadWorkflows(); }, 350);
+    awTypeTimer = setTimeout(() => { awPager.reset(); loadWorkflows(); }, 350);
   });
 });
 
@@ -2054,7 +2059,7 @@ $("#compBody").addEventListener("click", (event) => {
 /* 组件行「查工作流」：跳到工作流页并按仓库筛选（服务端模糊匹配，子串即可） */
 function jumpToWorkflows(repository) {
   $("#awRepo").value = repository;
-  awPage = 1;
+  awPager.reset();
   $("#awState").value = "all";
   $("#awLifecycle").value = "active";
   clickTab("workflows");
@@ -2068,7 +2073,7 @@ function jumpToWorkflowDetail(workflowId) {
   $("#awUser").value = "";
   $("#awState").value = "all";
   $("#awLifecycle").value = "all";
-  awPage = 1;
+  awPager.reset();
   awOpen.add(workflowId);
   clickTab("workflows");
   flashCard("#tab-workflows");
@@ -2215,7 +2220,7 @@ function reloadAfterOwnershipChange() {
 
 
 /* ------------------------- Attribution management ------------------------- */
-let recPage = 1;
+const recPager = makePager("rec", loadRecords);
 let recCache = [];
 let recRecordKind = "all";   // 积压体检色块的跳转筛选（queued/not_queued/all）
 let recPending = false;      // 「待归因」口径：窗口内没有任何归因行的 dev 产出（与总览卡片同集合）
@@ -2300,7 +2305,7 @@ $("#backlogStones").addEventListener("click", async (event) => {
   recRecordKind = jump.record_kind ?? "all";
   recPending = false;   // 队列状态视图与「待归因」口径不是同一集合
   $("#fStatus").value = jump.attribution_status ?? "";
-  recPage = 1;
+  recPager.reset();
   await loadRecords();
   // Jump to the records card and flash it so the applied filter is visible.
   const card = $("#cardRecords");
@@ -2319,7 +2324,7 @@ $("#failGroups").addEventListener("click", async (event) => {
   // "unknown" covers window-expired records that carry no engine reason;
   // filtering by the literal string would match nothing.
   $("#fFlag").value = reason === "unknown" ? "" : reason;
-  recPage = 1;
+  recPager.reset();
   await loadRecords();
   const card = $("#cardRecords");
   card.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -2342,21 +2347,21 @@ function renderKindChip() {
 $("#pendingChip").addEventListener("click", () => {
   recPending = false;
   renderKindChip();
-  recPage = 1;
+  recPager.reset();
   loadRecords();
 });
 
 $("#kindChip").addEventListener("click", () => {
   recRecordKind = "all";
   renderKindChip();
-  recPage = 1;
+  recPager.reset();
   loadRecords();
 });
 
 async function loadRecords() {
   renderKindChip();
   try {
-    const params = new URLSearchParams({ page: recPage, page_size: 25 });
+    const params = new URLSearchParams({ page: recPager.page, page_size: recPager.size });
     for (const [key, value] of Object.entries(recordFilterParams())) {
       params.set(key, value);
     }
@@ -2364,9 +2369,7 @@ async function loadRecords() {
     markSync(true);
     recCache = data.items;
     $("#recTotal").textContent = `共 ${data.total} 条`;
-    $("#recPage").textContent = recPage;
-    $("#btnRecPrev").disabled = recPage <= 1;
-    $("#btnRecNext").disabled = recPage * 25 >= data.total;
+    recPager.render(data.total);
     for (const [id, at] of [...freshRows]) { if (Date.now() - at > 6000) freshRows.delete(id); }
     $("#recBody").innerHTML = data.items.map((item) => recordRowHtml(item)).join("")
       || '<tr><td colspan="8" class="muted">没有符合条件的记录</td></tr>';
@@ -2628,7 +2631,7 @@ $("#btnBulkForce").addEventListener("click", () => runBulk("force_retry"));
 $("#btnBulkExclude").addEventListener("click", () => runBulk("exclude"));
 $("#btnBulkRestore").addEventListener("click", () => runBulk("restore"));
 
-$("#btnRecRefresh").addEventListener("click", () => { recPage = 1; loadRecords(); });
+$("#btnRecRefresh").addEventListener("click", () => { recPager.reset(); loadRecords(); });
 $("#btnRecReset").addEventListener("click", () => {
   ["#fRepo", "#fUser", "#fSr", "#fAr", "#fMr", "#fFlag", "#fAlgo"].forEach((id) => { $(id).value = ""; });
   ["#fStatus", "#fResult", "#fKind", "#fEntry"].forEach((id) => { $(id).value = ""; });
@@ -2637,11 +2640,9 @@ $("#btnRecReset").addEventListener("click", () => {
   $("#fTo").value = "";
   recRecordKind = "all";
   recPending = false;
-  recPage = 1;
+  recPager.reset();
   loadRecords();
 });
-$("#btnRecPrev").addEventListener("click", () => { if (recPage > 1) { recPage -= 1; loadRecords(); } });
-$("#btnRecNext").addEventListener("click", () => { recPage += 1; loadRecords(); });
 
 /* ------------------------------ Version ops ------------------------------ */
 const verPager = makePager("ver", loadVersions);
