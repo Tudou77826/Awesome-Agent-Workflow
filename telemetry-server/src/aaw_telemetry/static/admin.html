@@ -795,9 +795,7 @@
           <tbody id="awBody"></tbody>
         </table>
       </div>
-      <div class="toolbar" style="margin:12px 0 0; justify-content:flex-end;">
-        <div id="awPager" style="display:flex;gap:8px;align-items:center;"></div>
-      </div>
+      <div class="toolbar" id="awPager" style="margin:12px 0 0; justify-content:flex-end;"></div>
     </div>
   </section>
 
@@ -907,8 +905,6 @@
         <button class="btn" id="btnBulkForce">批量重跑失败</button>
         <button class="btn btn--danger" id="btnBulkExclude">批量屏蔽产出</button>
         <button class="btn" id="btnBulkRestore">批量恢复</button>
-        <span style="flex:1"></span>
-        <div id="recPager" style="display:flex;gap:8px;align-items:center;"></div>
       </div>
       <div class="table-wrap" style="overflow-x:auto;">
         <table>
@@ -921,6 +917,7 @@
           <tbody id="recBody"></tbody>
         </table>
       </div>
+      <div class="toolbar" id="recPager" style="margin:12px 0 0; justify-content:flex-end;"></div>
     </div>
   </section>
 
@@ -1461,7 +1458,7 @@ const fmtRate = (rate) => (rate == null ? "—" : (rate * 100).toFixed(1) + "%")
    pager.page / pager.size，取回后 pager.render(data.total)。 */
 const PAGER_SIZES = [10, 20, 50, 100];
 function makePager(key, render) {
-  const state = { page: 1, size: PAGER_SIZES[1], total: 0 };
+  const state = { page: 1, size: PAGER_SIZES[0], total: 0 };
   const mount = () => document.getElementById(`${key}Pager`);
   const pages = () => Math.max(1, Math.ceil(state.total / state.size));
   const wire = () => {
@@ -1500,12 +1497,13 @@ function makePager(key, render) {
       const sizeOptions = PAGER_SIZES.map(
         (n) => `<option value="${n}" ${n === state.size ? "selected" : ""}>${n}</option>`,
       ).join("");
-      bar.innerHTML = `<button class="btn" data-pager-prev ${state.page <= 1 ? "disabled" : ""}>上一页</button>
+      // 每页条数在翻页按钮左侧，与按钮留开一档距离。
+      bar.innerHTML = `<label class="muted" style="font-size:12.5px; margin-right:14px;">每页
+            <select data-pager-size style="padding:2px 6px;">${sizeOptions}</select> 条</label>
+          <button class="btn" data-pager-prev ${state.page <= 1 ? "disabled" : ""}>上一页</button>
           <span class="mono">${state.page} / ${pages()}</span>
           <button class="btn" data-pager-next ${state.page >= pages() ? "disabled" : ""}>下一页</button>
-          <span class="muted" style="font-size:12.5px;">共 ${state.total} 条</span>
-          <label class="muted" style="font-size:12.5px;">每页
-            <select data-pager-size style="padding:2px 6px;">${sizeOptions}</select> 条</label>`;
+          <span class="muted" style="font-size:12.5px;">共 ${state.total} 条</span>`;
     },
   };
 }
