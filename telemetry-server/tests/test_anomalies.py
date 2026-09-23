@@ -605,6 +605,26 @@ def test_anomaly_datetimes_carry_timezone_offset(client):
     assert pending and aware(pending[0]["created_at"])
 
 
+def test_event_payload_carries_display_name_and_archive_target_context(client):
+    """异常列表按"姓名 + 邮箱"显示；审核列表的屏蔽对象要带仓库/SR，不能只有裸 UUID。"""
+    _stalled_workflow(client)
+    headers = _admin(client)
+    _create_stalled_rule(client, headers)
+    _evaluate(client, headers)
+
+    event = client.get("/api/v1/anomalies/events?admin_view=true").json()["items"][0]
+    assert event["user_email"] == "developer@example.com"
+    assert event["user_name"] == "Z30049429"
+
+    created = client.post(
+        f"/api/v1/anomalies/events/{event['id']}/archive-requests",
+        json={"reason": "演示屏蔽", "requested_by": "测试"},
+    )
+    assert created.status_code == 201, created.text
+    request = client.get("/api/v1/anomalies/archive-requests", headers=headers).json()["items"][0]
+    assert request["target_context"] == {"repository": "team/example-service", "sr": "SR-1001"}
+
+
 def test_stalled_workflow_waiting_on_human_gate_is_called_out(client):
     """人工门禁超时并入工作流停滞：等确认的停滞直接说明在等谁，不再单开一条事件。"""
     master_id = _owner(client)

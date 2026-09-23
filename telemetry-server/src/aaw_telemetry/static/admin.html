@@ -3431,7 +3431,7 @@ function renderAnomalyEventPage() {
   const pageRows = anEventPager.slice(anEventsCache);
   $("#anEventBody").innerHTML = pageRows.map((item) => `<tr>
       <td><div class="an-problem-line"><span class="badge">${labels[item.category]}</span><span class="an-problem">${esc(item.title)}</span>${(() => { const sentence = anomalySentenceHtml(anCatalog.find((entry) => entry.code === item.detector_type), item.rule?.params) || esc(item.summary); return `<span class="an-cond"><span class="an-cond-icon" tabindex="0">?</span><span class="an-cond-pop">${sentence}</span></span>`; })()}</div></td>
-      <td>${esc(item.user_email || "—")}</td>
+      <td>${item.user_name ? `<b>${esc(item.user_name)}</b> ` : ""}${esc(item.user_email || "—")}</td>
       <td><b class="mono">${esc(item.repository || item.component_id || "系统级")}</b></td>
       <td>${anDuration(item.first_detected_at)}</td>
       <td><div class="an-actions"><button class="btn btn--small" data-an-detail="${item.id}">查看详情</button>${item.archive_supported && !item.archive_request ? `<button class="btn btn--small btn--primary" data-an-archive="${item.id}">申请屏蔽</button>` : ""}${item.archive_request ? `<span class="badge badge--waiting-review" title="屏蔽申请已提交，等待管理员在屏蔽审核中处理">屏蔽待审</span>` : ""}<button class="btn btn--small an-issue-shortcut" data-an-issue="${item.id}" title="提问题 / 提诉求" aria-label="针对该异常提问题或诉求"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 5.5h14v10H9l-4 3v-13Z"/><path d="M12 8v5M9.5 10.5h5"/></svg></button></div></td>
@@ -3454,7 +3454,7 @@ function showAnomalyEvent(id) {
   const evidence = item.evidence || {};
   const facts = [];
   const addFact = (label, value) => { if (value !== null && value !== undefined && value !== "") facts.push([label, value]); };
-  addFact("影响对象", item.user_email || item.repository || item.component_id || "系统级");
+  addFact("影响对象", item.user_name ? `${item.user_name} ${item.user_email}` : (item.user_email || item.repository || item.component_id || "系统级"));
   if (item.user_email && item.repository) addFact("所在仓库", item.repository);
   addFact("当前数值", item.actual_value || "—");
   addFact("判定阈值", item.threshold_value || "—");
@@ -3807,7 +3807,7 @@ function renderAnomalyReviewPage() {
   const targetLabels = { workflow: "工作流", dev_run: "开发产出", attribution: "归因记录", event: "异常事件" };
   const sourceLabels = { event: "异常事件", admin_console: "业务页" };
   const pageRows = anReviewPager.slice(anReviewCache);
-  $("#anReviewBody").innerHTML = pageRows.map((item) => `<tr><td>${esc(sourceLabels[item.source] ?? item.source ?? "异常事件")}发起<div class="an-sub">${esc(item.requested_by)} · ${new Date(item.created_at).toLocaleString()}</div></td><td>${esc(targetLabels[item.target_type] ?? item.target_type)}<div class="an-sub mono">${esc(item.target_id)}</div></td><td>${esc(item.reason)}<div class="an-sub">影响 ${item.impact_preview.affected_rows ?? "—"} 条数据</div></td><td><span class="badge">${esc(item.status === "pending" ? "待审核" : item.status === "approved" ? "已通过" : item.status === "rejected" ? "已拒绝" : item.status)}</span>${item.review_note ? `<div class="an-sub">${esc(item.review_note)}</div>` : ""}</td><td>${item.status === "pending" ? `<div class="an-actions"><button class="btn btn--small btn--primary" data-an-review="${item.id}" data-approved="true">通过</button><button class="btn btn--small btn--danger" data-an-review="${item.id}" data-approved="false">拒绝</button></div>` : "—"}</td></tr>`).join("");
+  $("#anReviewBody").innerHTML = pageRows.map((item) => `<tr><td>${esc(sourceLabels[item.source] ?? item.source ?? "异常事件")}发起<div class="an-sub">${esc(item.requested_by)} · ${new Date(item.created_at).toLocaleString()}</div></td><td>${esc(targetLabels[item.target_type] ?? item.target_type)}<div>${esc([item.target_context?.repository, item.target_context?.sr].filter(Boolean).join(" · ") || "—")}</div><div class="an-sub mono">${esc(item.target_id)}</div></td><td>${esc(item.reason)}<div class="an-sub">影响 ${item.impact_preview.affected_rows ?? "—"} 条数据</div></td><td><span class="badge">${esc(item.status === "pending" ? "待审核" : item.status === "approved" ? "已通过" : item.status === "rejected" ? "已拒绝" : item.status)}</span>${item.review_note ? `<div class="an-sub">${esc(item.review_note)}</div>` : ""}</td><td>${item.status === "pending" ? `<div class="an-actions"><button class="btn btn--small btn--primary" data-an-review="${item.id}" data-approved="true">通过</button><button class="btn btn--small btn--danger" data-an-review="${item.id}" data-approved="false">拒绝</button></div>` : "—"}</td></tr>`).join("");
   anReviewPager.render();
 }
 
@@ -3893,7 +3893,7 @@ async function toggleAnomalyMasterDetail(id, cell) {
     cell.innerHTML = `<div class="table-wrap" style="overflow-x:auto;"><table class="an-event-table"><thead><tr><th>问题</th><th>用户</th><th>仓库</th><th>持续时间</th><th>处理</th></tr></thead><tbody>${
       items.map((item) => `<tr>
         <td><div class="an-problem-line"><span class="badge">${labels[item.category]}</span><span class="an-problem">${esc(item.title)}</span></div></td>
-        <td>${esc(item.user_email || "—")}</td>
+        <td>${item.user_name ? `<b>${esc(item.user_name)}</b> ` : ""}${esc(item.user_email || "—")}</td>
         <td><b class="mono">${esc(item.repository || item.component_id || "系统级")}</b></td>
         <td>${anDuration(item.first_detected_at)}</td>
         <td><div class="an-actions"><button class="btn btn--small" data-an-detail="${item.id}">查看详情</button></div></td>

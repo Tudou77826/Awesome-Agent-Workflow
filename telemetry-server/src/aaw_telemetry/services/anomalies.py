@@ -1015,6 +1015,7 @@ class AnomalyService:
         self.archive = archive or DataArchiveAdapter(session)
         self.issue_board = issue_board or IssueBoardAdapter(session)
         self.ownership = ownership or RepositoryOwnershipAdapter(session)
+        self._user_names: dict[str, str] | None = None
 
     @staticmethod
     def detector_catalog() -> dict[str, Any]:
@@ -1487,7 +1488,42 @@ class AnomalyService:
         rows = self.session.scalars(
             statement.order_by(AnomalyArchiveRequest.created_at.desc())
         ).all()
-        return {"items": [self._archive_payload(row) for row in rows]}
+        context = self._archive_target_context(rows)
+        return {
+            "items": [
+                {**self._archive_payload(row), "target_context": context.get(str(row.target_id))}
+                for row in rows
+            ]
+        }
+
+    def _archive_target_context(
+        self, rows: list[AnomalyArchiveRequest]
+    ) -> dict[str, dict[str, str | None]]:
+        """屏蔽对象的可读上下文（仓库 / SR）：审核列表只给裸 UUID 认不出是什么。
+
+        attribution 的 target_id 是归因行的 dev_run_id，与 dev_run 同路反查。
+        """
+        wf_ids: set[uuid.UUID] = set()
+        dev_ids: set[uuid.UUID] = set()
+        for row in rows:
+            try:
+                target = uuid.UUID(str(row.target_id))
+            except ValueError:
+                continue
+            if row.target_type == "workflow":
+                wf_ids.add(target)
+            elif row.target_type in ("dev_run", "attribution"):
+                dev_ids.add(target)
+        found: dict[str, dict[str, str | None]] = {}
+        if wf_ids:
+            for wf in self.session.scalars(select(WorkflowRun).where(WorkflowRun.id.in_(wf_ids))):
+                found[str(wf.id)] = {"repository": wf.project_key, "sr": wf.sr}
+        if dev_ids:
+            for dev in self.session.scalars(select(DevRun).where(DevRun.id.in_(dev_ids))):
+                wf = self.session.get(WorkflowRun, dev.workflow_run_id)
+                if wf is not None:
+                    found[str(dev.id)] = {"repository": wf.project_key, "sr": wf.sr}
+        return found
 
     def create_issue(
         self, event_id: uuid.UUID, *, suggestion: str, reporter: str, assignee: str
@@ -1748,6 +1784,31 @@ class AnomalyService:
             created_at=_now(),
         )
 
+    def _latest_user_names(self) -> dict[str, str]:
+        """邮箱 → 最近一次上报使用的姓名。异常只存了邮箱，列表要按人显示。
+
+        同一邮箱可能换过 git 配置对应多个姓名，取最近活动的那条。
+        每个请求周期只查一次。
+        """
+        if self._user_names is None:
+            rows = self.session.execute(
+                select(
+                    WorkflowRun.git_user_email,
+                    WorkflowRun.git_user_name,
+                    func.max(WorkflowRun.last_activity_at),
+                ).group_by(WorkflowRun.git_user_email, WorkflowRun.git_user_name)
+            ).all()
+            names: dict[str, str] = {}
+            stamps: dict[str, datetime] = {}
+            for email, name, last_at in rows:
+                if not email or not name:
+                    continue
+                if email not in stamps or (last_at or datetime.min) > stamps[email]:
+                    stamps[email] = last_at or datetime.min
+                    names[email] = name
+            self._user_names = names
+        return self._user_names
+
     def _event_payload(self, event: AnomalyEvent) -> dict[str, Any]:
         master = self.session.get(AiMaster, event.ai_master_id) if event.ai_master_id else None
         rule = self.session.get(AnomalyRule, event.rule_id)
@@ -1764,6 +1825,7 @@ class AnomalyService:
             "component_id": event.component_id,
             "repository": event.repository,
             "user_email": event.user_email,
+            "user_name": self._latest_user_names().get(event.user_email or ""),
             "ai_master_id": str(event.ai_master_id) if event.ai_master_id else None,
             "ai_master_name": master.name if master else None,
             "title": event.title,
