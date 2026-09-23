@@ -68,14 +68,16 @@ cd /opt/aaw-telemetry && set -a && . /etc/aaw-telemetry.env && set +a
 
 ## 三、本轮执行结果
 
-见对话内《联调验证报告》。已确认问题按严重度：
+首轮发现 7 个问题，均已修复并在联调环境复验通过（commit `a7634a2`、`9a1ffd1`）：
 
-| 级别 | 编号 | 位置 | 现象 |
-| --- | --- | --- | --- |
-| 高 | BUG-1 | `services/anomalies.py` | 异常模块时间字段返回无时区 UTC，前端按本地时间解析，全部时间/时长偏差一个时区（东八区差 8h） |
-| 中 | BUG-2 | `DetectorSpec.low_adoption.sentence` + `AN_PARAM_META` | "近 30 内" 缺单位（`window_days` 无 meta） |
-| 中 | BUG-3 | `AN_PARAM_META` | 规则详情/编辑表单显示裸参数名 `window_days` |
-| 中 | BUG-4 | `DetectorSpec.adoption_drop.sentence` | "60 行 行有效代码" 量词重复 |
-| 中 | UX-1 | 异常总览"用户"列 | 显示裸邮箱，与版本页/工作流页"姓名+邮箱"口径不一致 |
-| 低 | UX-2 | 屏蔽审核"屏蔽对象" | 裸 UUID，无可读上下文 |
-| 低 | UX-3 | `anDuration` | 取整到小时，新异常显示"0 小时"；时长粒度不足 |
+| 级别 | 编号 | 位置 | 现象 | 修复 |
+| --- | --- | --- | --- | --- |
+| 高 | BUG-1 | `services/anomalies.py` | 异常模块时间字段返回无时区 UTC，前端按本地时间解析，全部时间/时长偏差一个时区（东八区差 8h） | payload 时间统一走 `_iso()` 输出 `+00:00`；测试断言时区 |
+| 中 | BUG-2 | `AN_PARAM_META` | "近 30 内" 缺单位 | `window_days` 补进参数元数据 |
+| 中 | BUG-3 | `AN_PARAM_META` | 规则详情/编辑表单显示裸参数名 `window_days` | 同 BUG-2，同源修复 |
+| 中 | BUG-4 | `DetectorSpec.adoption_drop.sentence` | "60 行 行有效代码" 量词重复 | 句尾改为 `{min_lines} 有效代码` |
+| 中 | UX-1 | 异常总览"用户"列 | 显示裸邮箱，与其他页面口径不一致 | payload 补 `user_name`（邮箱反查最近上报姓名），列表/详情按"姓名 + 邮箱"显示 |
+| 低 | UX-2 | 屏蔽审核"屏蔽对象" | 裸 UUID | payload 补 `target_context`（仓库 · SR），UUID 缩为辅助小字 |
+| 低 | UX-3 | `anDuration` | 取整到小时，新异常显示"0 小时" | 不满 1 小时显示分钟 |
+
+复验要点：异常详情"最近一次检测"、审核列表时间均为正确本地时区；新检出的异常时长以分钟显示；规则详情参数显示"统计窗口 30天"；审核对象显示"工作流 / awesome-agent-workflow · SR-9112"。
