@@ -576,6 +576,35 @@ def test_startup_retires_removed_builtin_rules_and_closes_events(client):
     assert {item["detector_type"] for item in again} == set(DETECTOR_SPECS)
 
 
+def test_anomaly_datetimes_carry_timezone_offset(client):
+    """异常模块的时间字段必须带时区：裸 UTC 会被浏览器当本地时间，整整差一个时区。"""
+    _stalled_workflow(client)
+    headers = _admin(client)
+    _create_stalled_rule(client, headers)
+    _evaluate(client, headers)
+
+    event = client.get("/api/v1/anomalies/events?admin_view=true").json()["items"][0]
+
+    def aware(value: str) -> bool:
+        return value.endswith("+00:00") or value.endswith("Z")
+
+    assert aware(event["first_detected_at"]), event["first_detected_at"]
+    assert aware(event["last_detected_at"])
+    rule = client.get("/api/v1/anomalies/rules", headers=headers).json()["items"][0]
+    assert aware(rule["created_at"])
+    assert aware(rule["updated_at"])
+    detail = client.get(f"/api/v1/anomalies/rules/{rule['id']}", headers=headers).json()
+    audits = detail["audits"]
+    assert audits and aware(audits[0]["created_at"])
+    request = client.post(
+        f"/api/v1/anomalies/events/{event['id']}/archive-requests",
+        json={"reason": "测试", "requested_by": "测试"},
+    )
+    assert request.status_code == 201, request.text
+    pending = client.get("/api/v1/anomalies/archive-requests", headers=headers).json()["items"]
+    assert pending and aware(pending[0]["created_at"])
+
+
 def test_stalled_workflow_waiting_on_human_gate_is_called_out(client):
     """人工门禁超时并入工作流停滞：等确认的停滞直接说明在等谁，不再单开一条事件。"""
     master_id = _owner(client)

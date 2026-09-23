@@ -3103,6 +3103,7 @@ const AN_PARAM_META = {
   retry_hours: { label: "等待重试超过", unit: "小时", note: "归因任务长时间未重试的判断线" },
   min_retry_count: { label: "失败重试达到", unit: "次", note: "达到该次数后判定持续失败" },
   threshold_percent: { label: "采纳率低于", unit: "%", note: "单条产出的采纳率低于这个水平就提示" },
+  window_days: { label: "统计窗口", unit: "天", note: "只检查这段时间内归因完成的产出" },
   active_days: { label: "近期活跃范围", unit: "天", note: "只检查这段时间内仍在使用的人员" },
   lag_positions: { label: "落后正式版本达到", unit: "个版本", note: "达到该差距后提示旧版本使用" },
   allowlist: { label: "允许使用的非发布版本", note: "多个版本使用逗号分隔；留空表示都不允许", kind: "list" },
@@ -3369,7 +3370,9 @@ function positionAnomalyPops() {
 }
 
 function anDuration(iso) {
-  const hours = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 36e5));
+  const minutes = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 60000));
+  if (minutes < 60) return `${minutes} 分钟`;
+  const hours = Math.floor(minutes / 60);
   return hours < 24 ? `${hours} 小时` : `${Math.floor(hours / 24)} 天`;
 }
 

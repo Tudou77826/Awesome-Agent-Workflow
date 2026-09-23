@@ -102,7 +102,7 @@ DETECTOR_SPECS: dict[str, DetectorSpec] = {
             {"recent_days": 7, "baseline_days": 28, "drop_pp": 25, "min_runs": 3, "min_lines": 60},
             sentence=(
                 "近 {recent_days} 产出的采纳率（80% 口径）比之前 {baseline_days} 下降超过 "
-                "{drop_pp}，且两侧各有至少 {min_runs} 产出、{min_lines} 行有效代码"
+                "{drop_pp}，且两侧各有至少 {min_runs} 产出、{min_lines} 有效代码"
             ),
         ),
         DetectorSpec(
@@ -295,9 +295,9 @@ def _rule_payload(rule: AnomalyRule) -> dict[str, Any]:
         "change_reason": rule.change_reason,
         "created_by": rule.created_by,
         "updated_by": rule.updated_by,
-        "created_at": rule.created_at,
-        "updated_at": rule.updated_at,
-        "last_evaluated_at": rule.last_evaluated_at,
+        "created_at": _iso(rule.created_at),
+        "updated_at": _iso(rule.updated_at),
+        "last_evaluated_at": _iso(rule.last_evaluated_at),
         "last_match_count": rule.last_match_count,
     }
 
@@ -1140,7 +1140,7 @@ class AnomalyService:
                 "operator": row.operator,
                 "before": row.before,
                 "after": row.after,
-                "created_at": row.created_at,
+                "created_at": _iso(row.created_at),
             }
             for row in audits
         ]
@@ -1777,9 +1777,9 @@ class AnomalyService:
             "closed_reason": event.closed_reason,
             "archive_supported": bool(rule and rule.allow_archive),
             "archive_request": self._pending_archive_request(event),
-            "first_detected_at": event.first_detected_at,
-            "last_detected_at": event.last_detected_at,
-            "recovered_at": event.recovered_at,
+            "first_detected_at": _iso(event.first_detected_at),
+            "last_detected_at": _iso(event.last_detected_at),
+            "recovered_at": _iso(event.recovered_at),
             "hit_count": event.hit_count,
         }
 
@@ -1812,8 +1812,8 @@ class AnomalyService:
             "requested_by": request.requested_by,
             "reviewed_by": request.reviewed_by,
             "review_note": request.review_note,
-            "created_at": request.created_at,
-            "reviewed_at": request.reviewed_at,
+            "created_at": _iso(request.created_at),
+            "reviewed_at": _iso(request.reviewed_at),
         }
 
     @staticmethod
@@ -1823,5 +1823,5 @@ class AnomalyService:
             "action": action.action,
             "actor": action.actor,
             "details": action.details,
-            "created_at": action.created_at,
+            "created_at": _iso(action.created_at),
         }
