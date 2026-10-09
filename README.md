@@ -138,7 +138,6 @@ Awesome-Agent-Workflow/
     ├── sr-design/               # 系统需求设计 + MCP 问答服务
     ├── ar-clarify/              # AR 需求范围澄清
     ├── module-boundary-design/  # 模块边界设计
-    ├── module-detail-design-split/  # 设计组拆分
     ├── module-asis-analysis/    # AS-IS 代码逆向分析
     ├── module-tobe-design/      # TO-BE 目标态设计
     ├── module-test-design/      # 测试用例设计
